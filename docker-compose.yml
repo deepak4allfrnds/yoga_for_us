@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: yoga_postgres
+    environment:
+      POSTGRES_USER: yoga
+      POSTGRES_PASSWORD: yoga123
+      POSTGRES_DB: yoga_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - yoga_pg_data:/var/lib/postgresql/data
+      - ./server/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yoga -d yoga_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build: .
+    image: ${DOCKERHUB_USER:-yourdockerhubuser}/yoga-website:latest
+    container_name: yoga_web
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      DATABASE_URL: postgresql://yoga:yoga123@postgres:5432/yoga_db
+      JWT_SECRET: ${JWT_SECRET:-change-this-yoga-secret}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-http://localhost:4000}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@yoga.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - yoga_uploads:/app/server/uploads
+
+volumes:
+  yoga_pg_data:
+  yoga_uploads:

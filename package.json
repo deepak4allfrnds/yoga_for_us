@@ -1,0 +1,9 @@
+{
+  "name": "yoga-for-us",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix client install && npm --prefix client run build",
+    "start": "npm --prefix server start",
+    "install:all": "npm --prefix client install && npm --prefix server install"
+  }
+}
