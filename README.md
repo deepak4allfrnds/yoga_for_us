@@ -347,11 +347,16 @@ Enter your Docker Hub username and password (or access token from **Account sett
 
 ### Step 3 — Build the image
 
-From the project root `G:\projects\yoga_website`:
+The Dockerfile must be built from the **project root** (`yoga_website`), the folder that contains both `client` and `server`. Do not run `docker build` from inside `client` or `server`.
 
 ```bash
+cd G:\projects\yoga_website
 docker build -t yourdockerhubuser/yoga-website:latest .
 ```
+
+On Windows you can also run `docker-build.bat` in that same folder.
+
+If you see `COPY failed ... client/package.json: file does not exist`, you are in the wrong directory. Check with `dir client\package.json` (Windows) or `ls client/package.json` (Linux). That file must exist in the folder where you run `docker build`.
 
 Optional version tag:
 

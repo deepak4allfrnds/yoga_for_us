@@ -1,4 +1,9 @@
 # syntax=docker/dockerfile:1
+# Build from the project ROOT (the folder that contains client/ and server/), not from client/:
+#   docker build -t yoga-website:latest .
+#   or double-click docker-build.bat
+
+FROM node:20-alpine AS client
 
 FROM node:20-alpine AS client
 WORKDIR /app/client
