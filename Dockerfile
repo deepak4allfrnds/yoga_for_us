@@ -3,9 +3,7 @@
 #   docker build -t yoga-website:latest .
 #   or double-click docker-build.bat
 
-FROM node:20-alpine AS client
-
-FROM node:20-alpine AS client
+FROM node:20-alpine AS frontend
 WORKDIR /app/client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci
@@ -17,7 +15,7 @@ WORKDIR /app
 COPY server/package.json server/package-lock.json ./server/
 RUN cd server && npm ci --omit=dev
 COPY server/ ./server/
-COPY --from=client /app/client/dist ./client/dist
+COPY --from=frontend  /app/client/dist ./client/dist
 WORKDIR /app/server
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0

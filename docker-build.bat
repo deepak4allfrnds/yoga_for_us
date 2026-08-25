@@ -1,6 +1,7 @@
 @echo off
 cd /d "%~dp0"
 echo Building from %cd%
+set DOCKER_BUILDKIT=1
 docker build -t yoga-website:latest .
 if errorlevel 1 exit /b 1
 echo.
