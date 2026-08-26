@@ -33,9 +33,17 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
+function corsOrigin() {
+  const raw = process.env.CLIENT_ORIGIN;
+  if (!raw || raw === "*") return true;
+  const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (list.length <= 1) return list[0] || true;
+  return list;
+}
+
 app.use(
   cors({
-    origin: process.env.CLIENT_ORIGIN || true,
+    origin: corsOrigin(),
   })
 );
 app.use(express.json());

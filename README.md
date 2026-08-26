@@ -1,4 +1,4 @@
-# Harmony Yoga
+# Yoga Master Ankur
 
 React (JavaScript) website with an Express API and PostgreSQL.
 
@@ -46,6 +46,68 @@ Admin login: `admin@harmonyyoga.com` / `admin123`
 ## Environment
 
 Copy `server/.env.example` to `server/.env` and set `DATABASE_URL` if your Postgres credentials differ.
+
+## Production domain: www.yogawithmasterankur.com
+
+Public site URL should be **https://www.yogawithmasterankur.com** (port 80/443), not `:4000`.
+
+### 1. DNS (where the domain is registered)
+
+Create **A** records pointing to your EC2 IP `44.247.55.81`:
+
+| Host | Type | Value |
+|---|---|---|
+| `@` (yogawithmasterankur.com) | A | 44.247.55.81 |
+| `www` | A | 44.247.55.81 |
+
+Wait until `ping yogawithmasterankur.com` (or a DNS checker) shows that IP.
+
+### 2. AWS security group (EC2 instance)
+
+Inbound:
+
+- **22** from your IP (SSH)
+- **80** from `0.0.0.0/0` (HTTP)
+- **443** from `0.0.0.0/0` (HTTPS)
+
+Port **4000** is optional. Visitors should use the domain on 80/443.
+
+### 3. Project files (already set for this domain)
+
+| File | What to set |
+|---|---|
+| `.env.production.example` | Copy to `.env` **on the server** (passwords, `DATABASE_URL`, `JWT_SECRET`) |
+| `CLIENT_ORIGIN` | `https://www.yogawithmasterankur.com,https://www.yogawithmasterankur.com` |
+| `client/.env.example` / `VITE_API_URL` | Leave **empty** (same domain serves `/api`) |
+| `docker-compose.prod.yml` | Publishes container port 4000 as host **80** |
+
+Do not commit real passwords. Local `server/.env` can stay on localhost for development.
+
+### 4. On EC2 (Docker)
+
+```bash
+cd /path/to/yoga_website
+cp .env.production.example .env
+nano .env
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+curl http://127.0.0.1/api/public/home
+```
+
+Then open **http://www.yogawithmasterankur.com**.
+
+### 5. HTTPS (Let's Encrypt)
+
+```bash
+sudo dnf install -y nginx certbot python3-certbot-nginx
+```
+
+Point Nginx to `http://127.0.0.1:4000` (or keep Docker on port 80 and put Certbot in front). Then:
+
+```bash
+sudo certbot --nginx -d yogawithmasterankur.com -d www.yogawithmasterankur.com
+```
+
+After SSL works, keep `CLIENT_ORIGIN` as the `https://` URLs above and recreate the web container.
 
 ## Deploy on Hostinger (production)
 

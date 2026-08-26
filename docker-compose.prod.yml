@@ -1,0 +1,10 @@
+# Production Compose: map HTTP 80 to the app.
+# Usage on EC2:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  web:
+    ports:
+      - "80:4000"
+    environment:
+      NODE_ENV: production
+      CLIENT_ORIGIN: https://yogawithmasterankur.com,https://www.yogawithmasterankur.com
