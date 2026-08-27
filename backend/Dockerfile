@@ -13,5 +13,4 @@ ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=4000
 ENV SCHEMA_PATH=/app/schema.sql
-EXPOSE 4000
-CMD ["node", "docker-start.js"]
+CMD ["node", "docker-start.js", "--", "host", "0.0.0.0", "--", "port", "5273"]
