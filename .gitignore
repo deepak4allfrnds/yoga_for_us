@@ -1,6 +1,9 @@
 node_modules
 dist
 .env
-server/uploads
+backend/.env
+frontend/.env
+frontend/.env.production
+backend/uploads
 *.log
 .DS_Store

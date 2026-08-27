@@ -4,11 +4,11 @@ node_modules
 .gitignore
 *.md
 .env
-server/.env
-client/.env
-client/.env.production
-client/dist
-server/uploads
+backend/.env
+frontend/.env
+frontend/.env.production
+frontend/dist
+backend/uploads
 **/*.log
 .DS_Store
 agent-transcripts

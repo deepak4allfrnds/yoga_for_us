@@ -52,7 +52,7 @@ async function syncGoogleReviews(force = false) {
       synced: 0,
       skipped: true,
       reason: !apiKey
-        ? "Add GOOGLE_PLACES_API_KEY in server/.env"
+        ? "Add GOOGLE_PLACES_API_KEY in backend/.env"
         : "Add a Google Place ID in Admin → Reviews",
     };
   }

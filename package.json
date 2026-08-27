@@ -1,14 +1,16 @@
 {
   "name": "yoga-for-us",
   "private": true,
+  "description": "3-tier monorepo: frontend (React), backend (Express), database (PostgreSQL)",
   "scripts": {
-    "dev": "concurrently -n server,client -c green,cyan \"npm --prefix server run dev\" \"npm --prefix client run dev\"",
-    "dev:server": "npm --prefix server run dev",
-    "dev:client": "npm --prefix client run dev",
-    "build": "npm --prefix client install && npm --prefix client run build",
-    "start": "npm --prefix server start",
-    "install:all": "npm --prefix client install && npm --prefix server install",
-    "docker:build": "docker build -t yoga-website:latest ."
+    "dev": "concurrently -n backend,frontend -c green,cyan \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:database": "docker compose up -d database",
+    "build": "npm --prefix frontend install && npm --prefix frontend run build",
+    "start": "npm --prefix backend start",
+    "install:all": "npm --prefix frontend install && npm --prefix backend install",
+    "docker:build": "docker compose build"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

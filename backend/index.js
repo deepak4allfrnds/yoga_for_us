@@ -924,7 +924,7 @@ app.delete("/api/admin/schedules/:id", requireAdmin, async (req, res) => {
   }
 });
 
-const clientDist = path.join(__dirname, "../client/dist");
+const clientDist = path.join(__dirname, "../frontend/dist");
 if (process.env.NODE_ENV === "production" && fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   app.use((req, res, next) => {

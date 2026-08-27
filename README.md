@@ -1,51 +1,61 @@
 # Yoga Master Ankur
 
-React (JavaScript) website with an Express API and PostgreSQL.
+3-tier production monorepo:
 
-## Pages
-
-- **Home** — navbar, yoga banner, courses with prices, client reviews, footer (address + timings)
-- **About us** — mission and yoga center information
-- **Gallery** — teachers with photos and reviews
-- **Contact us** — name, email, phone, address form; footer lists all outlets
-- **Admin** — payment summary, upload classes (price + image), upload teachers (image + reviews)
+| Folder | Tier | Stack |
+|---|---|---|
+| `frontend/` | Presentation | React (Vite) + Nginx in Docker |
+| `backend/` | Application | Express API |
+| `database/` | Data | PostgreSQL schema and image |
 
 ## Run locally
 
-1. Start PostgreSQL (Docker):
+1. Start the database only:
 
 ```bash
-docker compose up -d
+cd G:\projects\yoga_website
+npm run dev:database
 ```
 
-If the database already exists without tables, apply the schema:
+If tables are missing:
 
 ```bash
-cd server
+cd backend
 npm run db:init
+npm run db:users
+npm run db:schedule
+npm run db:reviews
 ```
 
-2. Start the API:
+2. Start API and website together:
 
 ```bash
-cd server
+npm run install:all
 npm run dev
 ```
 
-3. Start the React app:
+- Website: http://localhost:5173  
+- API: http://localhost:4000  
 
-```bash
-cd client
-npm run dev
-```
-
-Open http://localhost:5173
-
-Admin login: `admin@harmonyyoga.com` / `admin123`
+Admin: `admin@yoga.com` / `admin123`
 
 ## Environment
 
-Copy `server/.env.example` to `server/.env` and set `DATABASE_URL` if your Postgres credentials differ.
+Copy `backend/.env.example` to `backend/.env`.  
+Copy `database/.env.example` if you change Postgres user/password.
+
+## Production (3 Docker services)
+
+```bash
+docker compose build
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+- **frontend** — http://localhost (port 80), proxies `/api` to backend  
+- **backend** — port 4000  
+- **database** — port 5432  
+
+Push three images to Docker Hub: `yoga-frontend`, `yoga-backend`, `yoga-database`.
 
 ## Production domain: www.yogawithmasterankur.com
 
@@ -78,10 +88,10 @@ Port **4000** is optional. Visitors should use the domain on 80/443.
 |---|---|
 | `.env.production.example` | Copy to `.env` **on the server** (passwords, `DATABASE_URL`, `JWT_SECRET`) |
 | `CLIENT_ORIGIN` | `https://www.yogawithmasterankur.com,https://www.yogawithmasterankur.com` |
-| `client/.env.example` / `VITE_API_URL` | Leave **empty** (same domain serves `/api`) |
-| `docker-compose.prod.yml` | Publishes container port 4000 as host **80** |
+| `frontend/.env.example` / `VITE_API_URL` | Leave **empty** (Nginx on the frontend proxies `/api`) |
+| `docker-compose.prod.yml` | Publishes frontend on host **80** |
 
-Do not commit real passwords. Local `server/.env` can stay on localhost for development.
+Do not commit real passwords. Local `backend/.env` can stay on localhost for development.
 
 ### 4. On EC2 (Docker)
 
@@ -125,17 +135,17 @@ One domain serves the website and the API.
 ```bash
 cd /var/www/yoga_website
 npm run install:all
-cp server/.env.example server/.env
-# edit server/.env (see values below)
-cd server && npm run db:init && npm run db:users && npm run db:schedule && npm run db:reviews
+cp backend/.env.example backend/.env
+# edit backend/.env (see values below)
+cd backend && npm run db:init && npm run db:users && npm run db:schedule && npm run db:reviews
 cd ..
 npm run build
-NODE_ENV=production pm2 start server/index.js --name yoga-api
+NODE_ENV=production pm2 start backend/index.js --name yoga-api
 ```
 
 5. Nginx should proxy the domain to `http://127.0.0.1:4000` and enable SSL (Let’s Encrypt).
 
-**`server/.env` on the VPS**
+**`backend/.env` on the VPS**
 
 ```
 NODE_ENV=production
@@ -154,14 +164,14 @@ Change the default admin password before going live.
 
 ### Option B — Hostinger shared hosting (frontend only)
 
-1. Build the React app on your PC: `cd client && npm install && npm run build`
-2. If the API is on another URL, create `client/.env.production`:
+1. Build the React app on your PC: `cd frontend && npm install && npm run build`
+2. If the API is on another URL, create `frontend/.env.production`:
 
 ```
 VITE_API_URL=https://api.yourdomain.com
 ```
 
-3. Upload the contents of `client/dist` to `public_html`.
+3. Upload the contents of `frontend/dist` to `public_html`.
 4. Add an `.htaccess` in `public_html` so React Router works:
 
 ```
@@ -254,8 +264,8 @@ Or upload the folder with SCP/SFTP instead of Git.
 ### Step 6 — Production environment file
 
 ```bash
-cp server/.env.example server/.env
-nano server/.env
+cp backend/.env.example backend/.env
+nano backend/.env
 ```
 
 Use:
@@ -285,7 +295,7 @@ npm run db:schedule
 npm run db:reviews
 cd /var/www/yoga_website
 npm run build
-mkdir -p server/uploads
+mkdir -p backend/uploads
 ```
 
 If `db:init` fails with “already exists”, the later `db:users` / `db:schedule` / `db:reviews` commands are still enough.
@@ -294,7 +304,7 @@ If `db:init` fails with “already exists”, the later `db:users` / `db:schedul
 
 ```bash
 cd /var/www/yoga_website
-NODE_ENV=production pm2 start server/index.js --name yoga-api
+NODE_ENV=production pm2 start backend/index.js --name yoga-api
 pm2 save
 pm2 startup
 ```
@@ -352,7 +362,7 @@ sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
 
 Certbot will edit Nginx and renew certificates automatically.
 
-Then set `CLIENT_ORIGIN=https://yourdomain.com` in `server/.env` and run `pm2 restart yoga-api`.
+Then set `CLIENT_ORIGIN=https://yourdomain.com` in `backend/.env` and run `pm2 restart yoga-api`.
 
 ### Step 12 — After you change code
 
@@ -369,12 +379,12 @@ pm2 restart yoga-api
 | Service | When to add it |
 |---|---|
 | **Route 53** | Manage DNS inside AWS |
-| **S3** | Store teacher/class images instead of `server/uploads` |
+| **S3** | Store teacher/class images instead of `backend/uploads` |
 | **CloudWatch** | Logs and disk/CPU alarms |
 | **RDS snapshots** | Daily backups (enable in RDS) |
 | **Elastic Beanstalk** | AWS builds/runs Node for you; still attach RDS |
 
-Elastic Beanstalk alternative: zip the repo, set the same `server/.env` values as EB environment properties, Platform **Node.js**, and add an RDS PostgreSQL instance in the same environment. Nginx + PM2 on EC2 is usually clearer for this project.
+Elastic Beanstalk alternative: zip the repo, set the same `backend/.env` values as EB environment properties, Platform **Node.js**, and add an RDS PostgreSQL instance in the same environment. Nginx + PM2 on EC2 is usually clearer for this project.
 
 ### AWS production checklist
 
@@ -418,7 +428,7 @@ docker build -t yourdockerhubuser/yoga-website:latest .
 
 On Windows you can also run `docker-build.bat` in that same folder.
 
-If you see `COPY failed ... client/package.json: file does not exist`, you are in the wrong directory. Check with `dir client\package.json` (Windows) or `ls client/package.json` (Linux). That file must exist in the folder where you run `docker build`.
+If you see `COPY failed ... frontend/package.json: file does not exist`, you are in the wrong directory. Check with `dir client\package.json` (Windows) or `ls frontend/package.json` (Linux). That file must exist in the folder where you run `docker build`.
 
 Optional version tag:
 
