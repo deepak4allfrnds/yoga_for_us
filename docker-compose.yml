@@ -21,8 +21,8 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     image: ${DOCKERHUB_USER:-yourdockerhubuser}/yoga-backend:latest
     container_name: yoga_backend
     ports:
@@ -40,7 +40,7 @@ services:
       database:
         condition: service_healthy
     volumes:
-      - yoga_uploads:/workspace/backend/uploads
+      - yoga_uploads:/app/uploads
     networks:
       - yoga
 

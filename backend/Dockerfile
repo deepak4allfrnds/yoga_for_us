@@ -1,16 +1,17 @@
-# Build from the REPO ROOT (folder that contains frontend/, backend/, database/):
+# Build from the backend folder:
+#   cd backend
+#   docker build -t yoga-backend:latest .
+# Or from repo root:
 #   docker compose build backend
-#   docker build -f backend/Dockerfile -t yoga-backend:latest .
 
 FROM node:20-alpine
-WORKDIR /workspace
-COPY backend/package.json backend/package-lock.json ./backend/
-RUN cd backend && npm ci --omit=dev
-COPY backend/ ./backend/
-COPY database/schema.sql ./database/schema.sql
-WORKDIR /workspace/backend
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY . .
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=4000
+ENV SCHEMA_PATH=/app/schema.sql
 EXPOSE 4000
 CMD ["node", "docker-start.js"]
