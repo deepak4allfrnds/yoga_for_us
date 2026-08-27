@@ -42,8 +42,8 @@ services:
 
   frontend:
     build:
-      context: .
-      dockerfile: frontend/Dockerfile
+      context: ./frontend
+      dockerfile: Dockerfile
     image: ${DOCKERHUB_USER:-yourdockerhubuser}/yoga-frontend:latest
     container_name: yoga_frontend
     ports:

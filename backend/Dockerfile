@@ -1,3 +1,7 @@
+# Build from the REPO ROOT (folder that contains frontend/, backend/, database/):
+#   docker compose build backend
+#   docker build -f backend/Dockerfile -t yoga-backend:latest .
+
 FROM node:20-alpine
 WORKDIR /workspace
 COPY backend/package.json backend/package-lock.json ./backend/

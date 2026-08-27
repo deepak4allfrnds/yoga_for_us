@@ -1,11 +1,17 @@
+# Build from the frontend folder:
+#   cd frontend
+#   docker build -t yoga-frontend:latest .
+# Or from repo root:
+#   docker compose build frontend
+
 FROM node:20-alpine AS build
 WORKDIR /app
-COPY frontend/package.json frontend/package-lock.json ./
+COPY package.json package-lock.json ./
 RUN npm ci
-COPY frontend/ ./
+COPY . .
 RUN npm run build
 
 FROM nginx:1.27-alpine
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
