@@ -12,10 +12,12 @@ services:
     volumes:
       - yoga_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yoga} -d ${POSTGRES_DB:-yoga_db}"]
+      test: ["CMD-SHELL", "pg_isready -U yoga -d yoga_db"]
       interval: 5s
       timeout: 5s
       retries: 20
+    networks:
+      - yoga
 
   backend:
     build:
@@ -39,6 +41,8 @@ services:
         condition: service_healthy
     volumes:
       - yoga_uploads:/workspace/backend/uploads
+    networks:
+      - yoga
 
   frontend:
     build:
@@ -50,7 +54,14 @@ services:
       - "80:80"
     depends_on:
       - backend
+    networks:
+      - yoga
 
 volumes:
   yoga_pg_data:
   yoga_uploads:
+
+networks:
+  yoga:
+    name: yoga_net
+
