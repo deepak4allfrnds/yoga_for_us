@@ -39,7 +39,6 @@ services:
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
-      PORT: 4000
       DATABASE_URL: postgresql://${POSTGRES_USER:-yoga}:${POSTGRES_PASSWORD:-yoga123}@database:5432/${POSTGRES_DB:-yoga_db}
       JWT_SECRET: ${JWT_SECRET:-change-this-yoga-secret}
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-https://yogawithmasterankur.com,https://www.yogawithmasterankur.com}
@@ -62,7 +61,7 @@ services:
       dockerfile: Dockerfile
     container_name: yoga_frontend
     ports:
-      - "80:80"
+      - "5173:5173"
     depends_on:
       - backend
     networks:
