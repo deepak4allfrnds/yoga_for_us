@@ -15,6 +15,7 @@ const {
   getSite,
   googleWriteUrl,
 } = require("./googleReviews");
+const { ensureScheduleTables } = require("./migrate-schedule");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -199,6 +200,7 @@ app.post("/api/auth/reset-password", async (req, res) => {
 app.get("/api/public/home", async (_req, res) => {
   try {
     await ensureReviewColumns();
+    await ensureScheduleTables();
     await syncGoogleReviews(false).catch((err) => console.error(err));
     const [classes, reviews, outlets, site, schedules, trainers] = await Promise.all([
       db.query("SELECT * FROM classes ORDER BY id"),

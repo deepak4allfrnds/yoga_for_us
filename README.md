@@ -44,18 +44,44 @@ Admin: `admin@yoga.com` / `admin123`
 Copy `backend/.env.example` to `backend/.env`.  
 Copy `database/.env.example` if you change Postgres user/password.
 
-## Production (3 Docker services)
+## Docker Compose (dev vs production)
+
+**Development** (Vite on 5173, API on 4000, Postgres on 5432):
 
 ```bash
-docker compose build
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.dev.yml up --build
 ```
 
-- **frontend** — http://localhost (port 80), proxies `/api` to backend  
-- **backend** — port 4000  
-- **database** — port 5432  
+Open http://localhost:5173
 
-Push three images to Docker Hub: `yoga-frontend`, `yoga-backend`, `yoga-database`.
+**Production** (Nginx on port 80):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Open http://localhost
+
+| File | Purpose |
+|---|---|
+| `docker-compose.dev.yml` | Dev stack (`Dockerfile.dev`) |
+| `docker-compose.prod.yml` | Production stack (`Dockerfile`) |
+| `frontend/Dockerfile` | Production Nginx build |
+| `frontend/Dockerfile.dev` | Vite dev server |
+| `backend/Dockerfile` | Production API |
+| `backend/Dockerfile.dev` | Dev API |
+
+Build one image from its folder:
+
+```bash
+cd frontend
+docker build -t yoga-frontend:latest .
+docker build -f Dockerfile.dev -t yoga-frontend:dev .
+
+cd ../backend
+docker build -t yoga-backend:latest .
+docker build -f Dockerfile.dev -t yoga-backend:dev .
+```
 
 ## Production domain: www.yogawithmasterankur.com
 

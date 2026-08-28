@@ -1,0 +1,16 @@
+# Development backend: API on port 4000 (source can be bind-mounted)
+#   cd backend
+#   docker build -f Dockerfile.dev -t yoga-backend:dev .
+#   docker compose -f docker-compose.dev.yml up backend
+
+FROM node:20-alpine
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+ENV NODE_ENV=development
+ENV HOST=0.0.0.0
+ENV PORT=4000
+ENV SCHEMA_PATH=/app/schema.sql
+EXPOSE 4000
+CMD ["node", "docker-start.js"]

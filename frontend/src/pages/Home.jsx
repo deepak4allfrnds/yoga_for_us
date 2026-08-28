@@ -21,7 +21,7 @@ export default function Home() {
     api("/api/public/home")
       .then((d) => {
         setData(d);
-        if (d.outlets[0]) setStudioId(String(d.outlets[0].id));
+        if (d.outlets?.[0]) setStudioId(String(d.outlets[0].id));
       })
       .catch(console.error);
   }, []);

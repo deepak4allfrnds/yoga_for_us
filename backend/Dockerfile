@@ -1,13 +1,16 @@
-# Build from the backend folder:
+# Production backend: Express API on port 4000
 #   cd backend
 #   docker build -t yoga-backend:latest .
-# Or from repo root:
-#   docker compose build backend
+#   docker compose -f docker-compose.prod.yml build backend
 
 FROM node:20-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY . .
-EXPOSE 8080
-CMD ["node", "docker-start.js", "--", "host", "0.0.0.0", "--", "port", "8080"]
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=4000
+ENV SCHEMA_PATH=/app/schema.sql
+EXPOSE 4000
+CMD ["node", "docker-start.js"]

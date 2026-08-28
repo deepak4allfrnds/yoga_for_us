@@ -1,12 +1,78 @@
-# Production: public HTTP on 80, CORS for the live domain.
-# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Production — 3 tiers (Nginx + Express + PostgreSQL)
+# From repo root:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Website: http://YOUR_SERVER (port 80)
+# API:     http://YOUR_SERVER/api  (Nginx proxies to backend:4000)
+# Domain:  https://yogawithmasterankur.com (after DNS + SSL)
+
+name: yoga-prod
+
 services:
+  database:
+    build: ./database
+    image: postgres:16-alpine
+    container_name: yoga_database
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-yoga}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yoga123}
+      POSTGRES_DB: ${POSTGRES_DB:-yoga_db}
+    ports:
+      - "5432:5432"  
+    volumes:
+      - yoga_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yoga -d yoga_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - yoga-prod
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: yoga_backend
+   
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-yoga}:${POSTGRES_PASSWORD:-yoga123}@database:5432/${POSTGRES_DB:-yoga_db}
+      JWT_SECRET: ${JWT_SECRET:-change-this-yoga-secret}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-https://yogawithmasterankur.com,https://www.yogawithmasterankur.com}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@yoga.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      SCHEMA_PATH: /app/schema.sql
+      port: "8081:8080"
+    volumes:
+      - yoga_uploads:/app/uploads
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - yoga-prod
+    restart: unless-stopped
+
   frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: yoga_frontend
     ports:
       - "80:80"
-    environment:
-      NODE_ENV: production
-  backend:
-    environment:
-      NODE_ENV: production
-      CLIENT_ORIGIN: https://yogawithmasterankur.com,https://www.yogawithmasterankur.com
+    depends_on:
+      - backend
+    networks:
+      - yoga-prod
+    restart: unless-stopped
+
+volumes:
+  yoga_pg_data:
+  yoga_uploads:
+
+networks:
+  yoga-prod:
+    name: yoga_prod_net

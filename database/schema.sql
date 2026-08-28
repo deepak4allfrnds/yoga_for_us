@@ -73,6 +73,39 @@ CREATE TABLE IF NOT EXISTS site_info (
   center_info TEXT
 );
 
+CREATE TABLE IF NOT EXISTS weekly_schedules (
+  id SERIAL PRIMARY KEY,
+  outlet_id INTEGER REFERENCES outlets(id) ON DELETE CASCADE,
+  class_id INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+  trainer_id INTEGER REFERENCES trainers(id) ON DELETE SET NULL,
+  day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 1 AND 7),
+  start_time VARCHAR(20) NOT NULL,
+  end_time VARCHAR(20) NOT NULL,
+  mode VARCHAR(20) NOT NULL DEFAULT 'studio'
+);
+
+CREATE TABLE IF NOT EXISTS class_enrollments (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  class_id INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+  outlet_id INTEGER REFERENCES outlets(id) ON DELETE SET NULL,
+  mode VARCHAR(20) NOT NULL,
+  whatsapp VARCHAR(40),
+  meet_link TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (user_id, class_id, mode)
+);
+
+CREATE TABLE IF NOT EXISTS attendance (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  class_id INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+  outlet_id INTEGER REFERENCES outlets(id) ON DELETE SET NULL,
+  session_date DATE NOT NULL,
+  present BOOLEAN NOT NULL DEFAULT TRUE,
+  UNIQUE (user_id, class_id, session_date)
+);
+
 INSERT INTO outlets (name, address, timings, phone) VALUES
   ('Harmony Yoga — Downtown', '12 Lotus Lane, Green Park, New Delhi 110016', 'Mon–Sat 6:00 AM – 9:00 PM · Sun 7:00 AM – 1:00 PM', '+91 98100 11111'),
   ('Harmony Yoga — Riverside', '88 Riverwalk Road, Sector 18, Noida 201301', 'Mon–Fri 6:30 AM – 8:30 PM · Sat–Sun 7:00 AM – 4:00 PM', '+91 98100 22222'),

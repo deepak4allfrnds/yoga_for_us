@@ -1,8 +1,7 @@
-# Build from the frontend folder:
+# Production frontend: static React files served by Nginx on port 80
 #   cd frontend
 #   docker build -t yoga-frontend:latest .
-# Or from repo root:
-#   docker compose build frontend
+#   docker compose -f docker-compose.prod.yml build frontend
 
 FROM node:20-alpine AS build
 WORKDIR /app
@@ -14,5 +13,5 @@ RUN npm run build
 FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 5173
-CMD ["nginx", "-g", "daemon off;""--","host", "0.0.0.0","--","port", "5173"]
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

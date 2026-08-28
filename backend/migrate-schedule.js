@@ -1,7 +1,7 @@
 require("dotenv").config();
 const { pool } = require("./db");
 
-async function migrate() {
+async function ensureScheduleTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS weekly_schedules (
       id SERIAL PRIMARY KEY,
@@ -76,12 +76,19 @@ async function migrate() {
       (1, 6, 4, 7, '08:00', '08:45', 'online')
     `);
   }
+}
 
+async function migrate() {
+  await ensureScheduleTables();
   console.log("Schedule, enrollment, and attendance tables ready.");
   await pool.end();
 }
 
-migrate().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  migrate().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = { ensureScheduleTables };

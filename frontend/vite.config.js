@@ -1,31 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const apiTarget = process.env.VITE_API_PROXY || "http://localhost:4000";
+
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: "0.0.0.0",
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8080",
-      "/uploads": "http://localhost:8080",
-      
+      "/api": apiTarget,
+      "/uploads": apiTarget,
     },
-  },
-  preview: {
-    proxy: {
-      '/api': {
-        // `backend` is the compose service name; 8080 is its container port and
-        // must match BACKEND_PORT in .env (the port the Go app listens on).
-        target: 'http://backend:8080',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
-    },
-  },
-  test: {
-    environment: 'jsdom',
-    globals: true,
-    setupFiles: ['./src/test/setup.js'],
-    css: false,
   },
 });
