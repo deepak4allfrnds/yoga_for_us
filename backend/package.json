@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "start:prod": "node docker-start.js",
     "dev": "node index.js",
     "db:init": "node seed.js",
     "db:users": "node migrate-users.js",
