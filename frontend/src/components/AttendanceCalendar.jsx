@@ -6,6 +6,7 @@ export default function AttendanceCalendar({
   records = [],
   onToggle,
   disabled,
+  viewOnly = false,
 }) {
   const today = new Date();
   const [cursor, setCursor] = useState(
@@ -64,23 +65,30 @@ export default function AttendanceCalendar({
           ]
             .filter(Boolean)
             .join(" ");
+          const canToggle = !viewOnly && !disabled && scheduled;
           return (
             <button
               key={key}
               type="button"
               className={cls}
-              disabled={disabled || !scheduled}
-              onClick={() => onToggle(key, !(rec && rec.present))}
+              disabled={viewOnly ? !rec : !canToggle}
+              onClick={() => {
+                if (!canToggle || !onToggle) return;
+                onToggle(key, !(rec && rec.present));
+              }}
             >
               <span>{date.getDate()}</span>
               {rec?.present ? <small>Present</small> : null}
-              {scheduled && !rec ? <small>Mark</small> : null}
+              {rec && rec.present === false ? <small>Absent</small> : null}
+              {!viewOnly && scheduled && !rec ? <small>Mark</small> : null}
             </button>
           );
         })}
       </div>
       <p className="muted">
-        Green days are class days. Click a class day to mark attendance.
+        {viewOnly
+          ? "Green is present. Red is absent. Use Prev/Next to see other months."
+          : "Green days are class days. Click a class day to mark attendance."}
       </p>
     </div>
   );

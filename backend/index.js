@@ -991,11 +991,15 @@ app.delete("/api/admin/outlets/:id", requireAdmin, async (req, res) => {
 });
 
 app.get("/api/admin/attendance", requireAdmin, async (req, res) => {
-  const { outlet_id, class_id, from, to, session_date } = req.query;
+  const { outlet_id, class_id, from, to, session_date, user_id } = req.query;
   try {
     await ensureScheduleTables();
     const params = [];
     const where = [];
+    if (user_id) {
+      params.push(user_id);
+      where.push(`a.user_id = $${params.length}`);
+    }
     if (outlet_id) {
       params.push(outlet_id);
       where.push(`a.outlet_id = $${params.length}`);

@@ -71,6 +71,7 @@ select {
   justify-content: space-between;
   min-height: 76px;
   gap: 16px;
+  position: relative;
 }
 
 .logo {
@@ -79,6 +80,14 @@ select {
   gap: 10px;
   font-weight: 700;
   color: var(--green-dark);
+  min-width: 0;
+}
+
+.logo-text {
+  font-size: 26px;
+  font-family: "Source Sans 3", system-ui, sans-serif;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .logo-mark {
@@ -96,8 +105,8 @@ select {
 .nav {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .nav a,
@@ -108,11 +117,52 @@ select {
   background: transparent;
   border: 0;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .nav a.active,
 .nav a:hover {
   background: var(--green-soft);
+}
+
+.nav-user {
+  color: var(--muted);
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.nav-toggle {
+  display: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  cursor: pointer;
+  padding: 10px;
+  gap: 5px;
+  place-items: center;
+}
+
+.nav-toggle span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  background: var(--green-dark);
+  border-radius: 2px;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.header.is-open .nav-toggle span:nth-child(1) {
+  transform: translateY(7px) rotate(45deg);
+}
+
+.header.is-open .nav-toggle span:nth-child(2) {
+  opacity: 0;
+}
+
+.header.is-open .nav-toggle span:nth-child(3) {
+  transform: translateY(-7px) rotate(-45deg);
 }
 
 .btn {
@@ -520,6 +570,18 @@ select {
   background: var(--green-soft);
 }
 
+.cal-cell.absent {
+  background: #ffecea;
+}
+
+.attendance-calendar-panel {
+  margin-top: 28px;
+  padding: 20px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+
 @media (max-width: 900px) {
   .grid-3,
   .footer-grid,
@@ -534,5 +596,56 @@ select {
 
   .banner {
     min-height: 420px;
+  }
+
+  .header-inner {
+    min-height: 64px;
+    flex-wrap: wrap;
+  }
+
+  .logo-text {
+    font-size: 20px;
+  }
+
+  .nav-toggle {
+    display: grid;
+    margin-left: auto;
+  }
+
+  .nav {
+    display: none;
+    position: static;
+    transform: none;
+    flex-basis: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 8px 0 16px;
+    background: transparent;
+    border-bottom: 0;
+    box-shadow: none;
+    width: 100%;
+  }
+
+  .header.is-open .nav {
+    display: flex;
+  }
+
+  .nav a,
+  .nav .btn,
+  .nav-user {
+    width: 100%;
+    justify-content: flex-start;
+    border-radius: 12px;
+    padding: 12px 16px;
+    background: var(--sand);
+  }
+
+  .nav a.active {
+    background: var(--green-soft);
+  }
+
+  .container {
+    width: min(1120px, calc(100% - 24px));
   }
 }

@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { api, money, imageSrc } from "../api";
 import { useAuth } from "../AuthContext";
 import { DAYS } from "../scheduleUtils";
+import AttendanceCalendar from "../components/AttendanceCalendar";
 
 const WEEKDAYS = DAYS.filter((d) => d.id <= 5);
 
@@ -87,6 +88,8 @@ export default function AdminDashboard() {
   });
   const [roster, setRoster] = useState([]);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [calendarStudent, setCalendarStudent] = useState(null);
+  const [userCalendarRecords, setUserCalendarRecords] = useState([]);
   const [scheduleForm, setScheduleForm] = useState(emptySchedule);
   const [weekPlan, setWeekPlan] = useState({
     outlet_id: "",
@@ -302,6 +305,23 @@ export default function AdminDashboard() {
         }),
       });
       await loadAttendance();
+      if (calendarStudent?.user_id === user_id) {
+        await viewStudentCalendar(calendarStudent);
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function viewStudentCalendar(student) {
+    setError("");
+    setCalendarStudent(student);
+    try {
+      const qs = new URLSearchParams({ user_id: student.user_id });
+      if (attendanceFilter.class_id) qs.set("class_id", attendanceFilter.class_id);
+      if (attendanceFilter.outlet_id) qs.set("outlet_id", attendanceFilter.outlet_id);
+      const rows = await api(`/api/admin/attendance?${qs.toString()}`);
+      setUserCalendarRecords(rows);
     } catch (err) {
       setError(err.message);
     }
@@ -1361,6 +1381,7 @@ export default function AdminDashboard() {
                     <th>Phone</th>
                     <th>Status</th>
                     <th>Mark</th>
+                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -1397,6 +1418,13 @@ export default function AdminDashboard() {
                           >
                             Absent
                           </button>
+                          <button
+                            type="button"
+                            className="btn btn-outline"
+                            onClick={() => viewStudentCalendar(s)}
+                          >
+                            View
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1404,6 +1432,47 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             )}
+
+            {calendarStudent ? (
+              <div className="attendance-calendar-panel">
+                <div className="section-head">
+                  <div>
+                    <p className="muted">Student calendar</p>
+                    <h3 className="serif" style={{ margin: 0, fontSize: 28 }}>
+                      {calendarStudent.name}
+                    </h3>
+                    <p className="muted">
+                      All marked days for this student
+                      {attendanceFilter.class_id
+                        ? " in the selected class"
+                        : ""}
+                      .
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => {
+                      setCalendarStudent(null);
+                      setUserCalendarRecords([]);
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <AttendanceCalendar
+                  viewOnly
+                  slots={scheduleData.schedules.filter(
+                    (row) =>
+                      row.mode === "studio" &&
+                      String(row.outlet_id) ===
+                        String(attendanceFilter.outlet_id) &&
+                      String(row.class_id) === String(attendanceFilter.class_id)
+                  )}
+                  records={userCalendarRecords}
+                />
+              </div>
+            ) : null}
 
             <h2 className="serif" style={{ marginTop: 36 }}>
               Attendance records
@@ -1438,18 +1507,38 @@ export default function AdminDashboard() {
                       )}
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        onClick={async () => {
-                          await api(`/api/admin/attendance/${r.id}`, {
-                            method: "DELETE",
-                          });
-                          loadAttendance();
-                        }}
-                      >
-                        Delete
-                      </button>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() =>
+                            viewStudentCalendar({
+                              user_id: r.user_id,
+                              name: r.student_name,
+                            })
+                          }
+                        >
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={async () => {
+                            await api(`/api/admin/attendance/${r.id}`, {
+                              method: "DELETE",
+                            });
+                            loadAttendance();
+                            if (calendarStudent?.user_id === r.user_id) {
+                              viewStudentCalendar({
+                                user_id: r.user_id,
+                                name: r.student_name,
+                              });
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
