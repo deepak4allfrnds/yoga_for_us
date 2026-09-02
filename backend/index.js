@@ -8,7 +8,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const db = require("./db");
-const { requireAdmin, requireAuth } = require("./middleware/auth");
+const { requireAdmin, requireAuth, optionalAuth } = require("./middleware/auth");
 const {
   ensureReviewColumns,
   syncGoogleReviews,
@@ -17,6 +17,13 @@ const {
 } = require("./googleReviews");
 const { ensureScheduleTables } = require("./migrate-schedule");
 const { ensureAdminUser } = require("./migrate-users");
+const { ensurePaymentColumns, PAYMENT_SELECT } = require("./migrate-payments");
+const {
+  useTestSdk,
+  createCashfreeOrder,
+  fetchCashfreeOrder,
+  isPaidStatus,
+} = require("./cashfree");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -401,6 +408,154 @@ app.post("/api/public/enroll", async (req, res) => {
   }
 });
 
+app.post("/api/payments/cashfree/order", optionalAuth, async (req, res) => {
+  const { student_name, email, phone, class_id, mode, outlet_id } = req.body;
+  if (!student_name || !email || !class_id) {
+    return res.status(400).json({ error: "Name, email, and class are required" });
+  }
+  try {
+    await ensurePaymentColumns();
+    const course = await db.query("SELECT * FROM classes WHERE id = $1", [class_id]);
+    if (!course.rows[0]) {
+      return res.status(404).json({ error: "Class not found" });
+    }
+    const amount = Math.max(Number(course.rows[0].price || 0), 1);
+    const payment = await db.query(
+      `INSERT INTO payments
+         (student_name, email, phone, class_id, amount, status, payment_method, user_id, mode, outlet_id)
+       VALUES ($1, $2, $3, $4, $5, 'pending', 'cashfree', $6, $7, $8)
+       RETURNING *`,
+      [
+        student_name.trim(),
+        email.trim().toLowerCase(),
+        phone || null,
+        class_id,
+        amount,
+        req.user?.id || null,
+        mode || null,
+        mode === "studio" ? outlet_id || null : null,
+      ]
+    );
+    const row = payment.rows[0];
+    const orderId = `yoga_${row.id}_${Date.now()}`.slice(0, 50);
+    const origin = String(process.env.CLIENT_ORIGIN || "http://localhost:5173")
+      .split(",")[0]
+      .trim();
+    const digits = String(phone || "9999999999").replace(/\D/g, "").slice(-10) || "9999999999";
+    const cf = await createCashfreeOrder({
+      orderId,
+      amount,
+      returnUrl: `${origin}/payments/history?order_id={order_id}`,
+      customer: {
+        id: req.user?.id || `guest${row.id}`,
+        name: student_name.trim(),
+        email: email.trim().toLowerCase(),
+        phone: digits,
+        note: course.rows[0].title,
+      },
+    });
+    await db.query("UPDATE payments SET cf_order_id = $1 WHERE id = $2", [
+      cf.order_id,
+      row.id,
+    ]);
+    res.status(201).json({
+      payment_id: row.id,
+      order_id: cf.order_id,
+      payment_session_id: cf.payment_session_id,
+      test_sdk: Boolean(cf.test_sdk),
+      environment: process.env.CASHFREE_ENV === "production" ? "production" : "sandbox",
+      amount,
+      class_title: course.rows[0].title,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "Could not start Cashfree payment" });
+  }
+});
+
+app.post("/api/payments/cashfree/verify", optionalAuth, async (req, res) => {
+  const { order_id, payment_id } = req.body;
+  if (!order_id && !payment_id) {
+    return res.status(400).json({ error: "Order id is required" });
+  }
+  try {
+    await ensurePaymentColumns();
+    const found = await db.query(
+      `${PAYMENT_SELECT} WHERE p.cf_order_id = $1 OR p.id = $2 LIMIT 1`,
+      [order_id || null, payment_id || null]
+    );
+    const row = found.rows[0];
+    if (!row) {
+      return res.status(404).json({ error: "Payment not found" });
+    }
+    const cfOrder = await fetchCashfreeOrder(row.cf_order_id || order_id);
+    const paid = isPaidStatus(cfOrder);
+    const raw = String(cfOrder.order_status || "").toUpperCase();
+    const nextStatus = paid ? "paid" : raw === "ACTIVE" || raw === "PENDING" ? "pending" : "failed";
+    await db.query(
+      `UPDATE payments
+       SET status = $1, payment_method = 'cashfree', cf_payment_id = COALESCE($2, cf_payment_id)
+       WHERE id = $3`,
+      [nextStatus, cfOrder.cf_payment_id || cfOrder.payment_id || null, row.id]
+    );
+    const detail = await db.query(`${PAYMENT_SELECT} WHERE p.id = $1`, [row.id]);
+    res.json({
+      payment: detail.rows[0],
+      paid,
+      test_sdk: useTestSdk(),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "Could not verify payment" });
+  }
+});
+
+app.get("/api/payments/history", optionalAuth, async (req, res) => {
+  try {
+    await ensurePaymentColumns();
+    const params = [];
+    const where = [];
+    if (req.user?.id) {
+      params.push(req.user.id);
+      where.push(`p.user_id = $${params.length}`);
+    }
+    const email = String(req.query.email || "").trim().toLowerCase();
+    if (email) {
+      params.push(email);
+      where.push(`p.email = $${params.length}`);
+    }
+    if (req.query.order_id) {
+      params.push(req.query.order_id);
+      where.push(`p.cf_order_id = $${params.length}`);
+    }
+    if (!where.length) {
+      return res.status(400).json({ error: "Sign in or enter the email used at checkout" });
+    }
+    const result = await db.query(
+      `${PAYMENT_SELECT} WHERE ${where.join(" OR ")} ORDER BY p.created_at DESC LIMIT 50`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load payment history" });
+  }
+});
+
+app.get("/api/user/payments", requireAuth, async (req, res) => {
+  try {
+    await ensurePaymentColumns();
+    const result = await db.query(
+      `${PAYMENT_SELECT} WHERE p.user_id = $1 OR p.email = $2 ORDER BY p.created_at DESC`,
+      [req.user.id, req.user.email]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load payment history" });
+  }
+});
+
 function meetLink() {
   const chunk = () => Math.random().toString(36).replace(/[^a-z]/g, "").slice(0, 3);
   return `https://meet.google.com/${chunk()}-${chunk()}${chunk().slice(0, 1)}-${chunk()}`;
@@ -549,9 +704,10 @@ app.post("/api/admin/upload", requireAdmin, upload.single("image"), (req, res) =
 app.get("/api/admin/payments", requireAdmin, async (_req, res) => {
   try {
     const list = await db.query(
-      `SELECT p.*, c.title AS class_title
+      `SELECT p.*, c.title AS class_title, c.duration AS class_duration, o.name AS outlet_name
        FROM payments p
        LEFT JOIN classes c ON c.id = p.class_id
+       LEFT JOIN outlets o ON o.id = p.outlet_id
        ORDER BY p.created_at DESC`
     );
     const summary = await db.query(`
@@ -1112,7 +1268,8 @@ if (process.env.NODE_ENV === "production" && fs.existsSync(clientDist)) {
 }
 
 const HOST = process.env.HOST || "0.0.0.0";
-ensureAdminUser()
+ensurePaymentColumns()
+  .then(() => ensureAdminUser())
   .then(() => {
     app.listen(PORT, HOST, () => {
       console.log(`Harmony Yoga API running on http://${HOST}:${PORT}`);

@@ -28,4 +28,15 @@ function requireAdmin(req, res, next) {
   });
 }
 
-module.exports = { requireAuth, requireAdmin };
+function optionalAuth(req, _res, next) {
+  const token = readToken(req);
+  if (!token) return next();
+  try {
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    req.user = null;
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireAdmin, optionalAuth };

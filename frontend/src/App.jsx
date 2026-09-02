@@ -7,6 +7,7 @@ import Contact from "./pages/Contact";
 import AdminDashboard from "./pages/AdminDashboard";
 import CourseDetail from "./pages/CourseDetail";
 import Payment from "./pages/Payment";
+import PaymentHistory from "./pages/PaymentHistory";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -23,6 +24,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/courses/:id" element={<CourseDetail />} />
           <Route path="/courses/:id/pay" element={<Payment />} />
+          <Route path="/payments/history" element={<PaymentHistory />} />
           <Route path="/about" element={<About />} />
           <Route path="/gallery" element={<Gallery />} />
           <Route path="/contact" element={<Contact />} />

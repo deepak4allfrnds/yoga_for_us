@@ -39,6 +39,7 @@ waitForDatabase()
     run("migrate-users.js");
     run("migrate-schedule.js");
     run("migrate-reviews.js");
+    run("migrate-payments.js");
     require("./index.js");
   })
   .catch((err) => {

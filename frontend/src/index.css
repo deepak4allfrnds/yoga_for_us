@@ -307,6 +307,25 @@ select {
   align-items: start;
 }
 
+.cf-test-box {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px dashed var(--green);
+  border-radius: 14px;
+  background: var(--green-soft);
+}
+
+.history-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.history-card.is-latest {
+  border-color: var(--green);
+  box-shadow: 0 8px 24px rgba(21, 77, 53, 0.08);
+}
+
 .review {
   padding: 22px;
   background: white;

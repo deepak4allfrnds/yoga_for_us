@@ -36,6 +36,9 @@ export default function Navbar() {
       <NavLink to="/contact" onClick={close}>
         Contact Us
       </NavLink>
+      <NavLink to="/payments/history" onClick={close}>
+        Payments
+      </NavLink>
       {isAdmin ? (
         <Link to="/admin/dashboard" className="btn btn-green" onClick={close}>
           Admin panel

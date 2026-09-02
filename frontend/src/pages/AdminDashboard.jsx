@@ -463,6 +463,7 @@ export default function AdminDashboard() {
                   <th>Date</th>
                   <th>Student</th>
                   <th>Class</th>
+                  <th>Chosen type</th>
                   <th>Amount</th>
                   <th>Method</th>
                   <th>Status</th>
@@ -477,7 +478,24 @@ export default function AdminDashboard() {
                       <br />
                       <span className="muted">{p.email}</span>
                     </td>
-                    <td>{p.class_title || "—"}</td>
+                    <td>
+                      {p.class_title || "—"}
+                      <br />
+                      <span className="muted">{p.class_duration}</span>
+                    </td>
+                    <td>
+                      {p.mode === "online"
+                        ? "Online"
+                        : p.mode === "studio"
+                          ? "Studio"
+                          : "—"}
+                      {p.outlet_name ? (
+                        <>
+                          <br />
+                          <span className="muted">{p.outlet_name}</span>
+                        </>
+                      ) : null}
+                    </td>
                     <td>{money(p.amount)}</td>
                     <td>{p.payment_method}</td>
                     <td>
