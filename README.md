@@ -469,7 +469,7 @@ docker compose up --build
 ```
 
 Open http://localhost:4000  
-Admin: `admin@harmonyyoga.com` / `admin123`
+Admin: `admin@yoga.com` / `admin123`
 
 Stop with `Ctrl+C`, then `docker compose down` (add `-v` only if you also want to wipe the database volume).
 

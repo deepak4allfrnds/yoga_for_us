@@ -107,15 +107,15 @@ CREATE TABLE IF NOT EXISTS attendance (
 );
 
 INSERT INTO outlets (name, address, timings, phone) VALUES
-  ('Harmony Yoga — Downtown', '12 Lotus Lane, Green Park, New Delhi 110016', 'Mon–Sat 6:00 AM – 9:00 PM · Sun 7:00 AM – 1:00 PM', '+91 98100 11111'),
-  ('Harmony Yoga — Riverside', '88 Riverwalk Road, Sector 18, Noida 201301', 'Mon–Fri 6:30 AM – 8:30 PM · Sat–Sun 7:00 AM – 4:00 PM', '+91 98100 22222'),
-  ('Harmony Yoga — Hillside', '4 Pine Ridge, Mussoorie Road, Dehradun 248001', 'Daily 6:00 AM – 7:00 PM', '+91 98100 33333')
+  ('Yoga For Us — Downtown', '12 Lotus Lane, Green Park, New Delhi 110016', 'Mon–Sat 6:00 AM – 9:00 PM · Sun 7:00 AM – 1:00 PM', '+91 98100 11111'),
+  ('Yoga For Us — Riverside', '88 Riverwalk Road, Sector 18, Noida 201301', 'Mon–Fri 6:30 AM – 8:30 PM · Sat–Sun 7:00 AM – 4:00 PM', '+91 98100 22222'),
+  ('Yoga For Us — Hillside', '4 Pine Ridge, Mussoorie Road, Dehradun 248001', 'Daily 6:00 AM – 7:00 PM', '+91 98100 33333')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO site_info (mission, center_info) VALUES
   (
     'Our mission is to make authentic yoga accessible to every body. We blend classical asana, breathwork, and mindful living so students leave stronger, calmer, and more connected.',
-    'Harmony Yoga Center has welcomed students since 2014. Our studios use natural light, cork floors, and small class sizes. We offer beginner through teacher-training paths, Ayurvedic workshops, and community seva days each month.'
+    'Yoga For Us Yoga Center has welcomed students since 2014. Our studios use natural light, cork floors, and small class sizes. We offer beginner through teacher-training paths, Ayurvedic workshops, and community seva days each month.'
   )
 ON CONFLICT DO NOTHING;
 
