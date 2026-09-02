@@ -6,6 +6,10 @@ import { DAYS } from "../scheduleUtils";
 
 const WEEKDAYS = DAYS.filter((d) => d.id <= 5);
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function emptyWeekDays() {
   return Object.fromEntries(
     WEEKDAYS.map((d) => [
@@ -67,6 +71,22 @@ export default function AdminDashboard() {
   };
   const [classForm, setClassForm] = useState(emptyClass);
   const [trainerForm, setTrainerForm] = useState(emptyTrainer);
+  const emptyOutlet = {
+    id: null,
+    name: "",
+    address: "",
+    timings: "",
+    phone: "",
+  };
+  const [outlets, setOutlets] = useState([]);
+  const [outletForm, setOutletForm] = useState(emptyOutlet);
+  const [attendanceFilter, setAttendanceFilter] = useState({
+    outlet_id: "",
+    class_id: "",
+    session_date: todayIso(),
+  });
+  const [roster, setRoster] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [scheduleForm, setScheduleForm] = useState(emptySchedule);
   const [weekPlan, setWeekPlan] = useState({
     outlet_id: "",
@@ -92,13 +112,14 @@ export default function AdminDashboard() {
 
   async function loadAll() {
     try {
-      const [p, c, t, ct, sch, g] = await Promise.all([
+      const [p, c, t, ct, sch, g, o] = await Promise.all([
         api("/api/admin/payments"),
         api("/api/admin/classes"),
         api("/api/admin/trainers"),
         api("/api/admin/contacts"),
         api("/api/admin/schedules"),
         api("/api/admin/google"),
+        api("/api/admin/outlets"),
       ]);
       setPayments(p);
       setClasses(c);
@@ -106,6 +127,7 @@ export default function AdminDashboard() {
       setContacts(ct);
       setScheduleData(sch);
       setGoogleSettings(g);
+      setOutlets(o);
     } catch (err) {
       setError(err.message);
       if (String(err.message).includes("sign in")) {
@@ -230,6 +252,61 @@ export default function AdminDashboard() {
     loadAll();
   }
 
+  async function saveOutlet(e) {
+    e.preventDefault();
+    setError("");
+    const path = outletForm.id
+      ? `/api/admin/outlets/${outletForm.id}`
+      : "/api/admin/outlets";
+    await api(path, {
+      method: outletForm.id ? "PUT" : "POST",
+      body: JSON.stringify(outletForm),
+    });
+    setOutletForm(emptyOutlet);
+    loadAll();
+  }
+
+  async function loadAttendance() {
+    setError("");
+    const { outlet_id, class_id, session_date } = attendanceFilter;
+    const recordQs = new URLSearchParams();
+    if (outlet_id) recordQs.set("outlet_id", outlet_id);
+    if (class_id) recordQs.set("class_id", class_id);
+    try {
+      const records = await api(`/api/admin/attendance?${recordQs.toString()}`);
+      setAttendanceRecords(records);
+      if (outlet_id && class_id && session_date) {
+        const students = await api(
+          `/api/admin/attendance/roster?outlet_id=${outlet_id}&class_id=${class_id}&session_date=${session_date}`
+        );
+        setRoster(students);
+      } else {
+        setRoster([]);
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function markStudent(user_id, present) {
+    setError("");
+    try {
+      await api("/api/admin/attendance", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id,
+          class_id: attendanceFilter.class_id,
+          outlet_id: attendanceFilter.outlet_id,
+          session_date: attendanceFilter.session_date,
+          present,
+        }),
+      });
+      await loadAttendance();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function saveReview(e) {
     e.preventDefault();
     await api("/api/admin/reviews", {
@@ -257,7 +334,7 @@ export default function AdminDashboard() {
     <div className="admin-shell">
       <aside className="admin-side">
         <h2 className="serif" style={{ marginTop: 0 }}>
-          Harmony Admin
+          Studio Admin
         </h2>
         <a
           href="#payments"
@@ -290,6 +367,16 @@ export default function AdminDashboard() {
           Teachers
         </a>
         <a
+          href="#outlets"
+          className={tab === "outlets" ? "active" : ""}
+          onClick={(e) => {
+            e.preventDefault();
+            setTab("outlets");
+          }}
+        >
+          Studios
+        </a>
+        <a
           href="#schedules"
           className={tab === "schedules" ? "active" : ""}
           onClick={(e) => {
@@ -298,6 +385,17 @@ export default function AdminDashboard() {
           }}
         >
           Studio schedule
+        </a>
+        <a
+          href="#attendance"
+          className={tab === "attendance" ? "active" : ""}
+          onClick={(e) => {
+            e.preventDefault();
+            setTab("attendance");
+            loadAttendance();
+          }}
+        >
+          Attendance
         </a>
         <a
           href="#contacts"
@@ -1047,6 +1145,311 @@ export default function AdminDashboard() {
                           Delete
                         </button>
                       </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {tab === "outlets" && (
+          <>
+            <h1 className="serif">
+              {outletForm.id ? "Edit studio" : "Add studio"}
+            </h1>
+            <form className="admin-form" onSubmit={saveOutlet}>
+              <label>
+                Studio name
+                <input
+                  value={outletForm.name}
+                  onChange={(e) =>
+                    setOutletForm({ ...outletForm, name: e.target.value })
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Phone
+                <input
+                  value={outletForm.phone}
+                  onChange={(e) =>
+                    setOutletForm({ ...outletForm, phone: e.target.value })
+                  }
+                />
+              </label>
+              <label className="full">
+                Address
+                <input
+                  value={outletForm.address}
+                  onChange={(e) =>
+                    setOutletForm({ ...outletForm, address: e.target.value })
+                  }
+                  required
+                />
+              </label>
+              <label className="full">
+                Timings
+                <input
+                  value={outletForm.timings}
+                  onChange={(e) =>
+                    setOutletForm({ ...outletForm, timings: e.target.value })
+                  }
+                  placeholder="Mon–Sat 6:00 AM – 9:00 PM"
+                  required
+                />
+              </label>
+              <div className="full" style={{ display: "flex", gap: 10 }}>
+                <button className="btn btn-green" type="submit">
+                  {outletForm.id ? "Update studio" : "Add studio"}
+                </button>
+                {outletForm.id ? (
+                  <button
+                    className="btn btn-outline"
+                    type="button"
+                    onClick={() => setOutletForm(emptyOutlet)}
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            </form>
+            <table className="table" style={{ marginTop: 28 }}>
+              <thead>
+                <tr>
+                  <th>Studio</th>
+                  <th>Address</th>
+                  <th>Timings</th>
+                  <th>Phone</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {outlets.map((o) => (
+                  <tr key={o.id}>
+                    <td>{o.name}</td>
+                    <td>{o.address}</td>
+                    <td>{o.timings}</td>
+                    <td>{o.phone || "—"}</td>
+                    <td>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => setOutletForm(o)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={async () => {
+                            if (
+                              !window.confirm(
+                                `Delete ${o.name}? Schedules at this studio will also be removed.`
+                              )
+                            ) {
+                              return;
+                            }
+                            await api(`/api/admin/outlets/${o.id}`, {
+                              method: "DELETE",
+                            });
+                            if (outletForm.id === o.id) setOutletForm(emptyOutlet);
+                            loadAll();
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {tab === "attendance" && (
+          <>
+            <h1 className="serif">Mark and view attendance</h1>
+            <p className="muted">
+              Choose a studio, class, and date. Students appear after they enroll
+              in a studio class. Then mark Present or Absent. Records stay in the
+              table below.
+            </p>
+            <form
+              className="admin-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                loadAttendance();
+              }}
+            >
+              <label>
+                Studio
+                <select
+                  value={attendanceFilter.outlet_id}
+                  onChange={(e) =>
+                    setAttendanceFilter({
+                      ...attendanceFilter,
+                      outlet_id: e.target.value,
+                    })
+                  }
+                  required
+                >
+                  <option value="">Select studio</option>
+                  {outlets.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Class
+                <select
+                  value={attendanceFilter.class_id}
+                  onChange={(e) =>
+                    setAttendanceFilter({
+                      ...attendanceFilter,
+                      class_id: e.target.value,
+                    })
+                  }
+                  required
+                >
+                  <option value="">Select class</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Date
+                <input
+                  type="date"
+                  value={attendanceFilter.session_date}
+                  onChange={(e) =>
+                    setAttendanceFilter({
+                      ...attendanceFilter,
+                      session_date: e.target.value,
+                    })
+                  }
+                  required
+                />
+              </label>
+              <div className="full">
+                <button className="btn btn-green" type="submit">
+                  Load students
+                </button>
+              </div>
+            </form>
+
+            <h2 className="serif" style={{ marginTop: 32 }}>
+              Students for {attendanceFilter.session_date || "this date"}
+            </h2>
+            {roster.length === 0 ? (
+              <p className="muted">
+                No enrolled studio students for this studio and class. A student
+                must log in and choose Studio offline for this class first.
+              </p>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    <th>Phone</th>
+                    <th>Status</th>
+                    <th>Mark</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {roster.map((s) => (
+                    <tr key={s.user_id}>
+                      <td>
+                        {s.name}
+                        <br />
+                        <span className="muted">{s.email}</span>
+                      </td>
+                      <td>{s.phone || "—"}</td>
+                      <td>
+                        {s.present === true ? (
+                          <span className="badge paid">Present</span>
+                        ) : s.present === false ? (
+                          <span className="badge failed">Absent</span>
+                        ) : (
+                          <span className="muted">Not marked</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="btn btn-green"
+                            onClick={() => markStudent(s.user_id, true)}
+                          >
+                            Present
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-outline"
+                            onClick={() => markStudent(s.user_id, false)}
+                          >
+                            Absent
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <h2 className="serif" style={{ marginTop: 36 }}>
+              Attendance records
+            </h2>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Student</th>
+                  <th>Class</th>
+                  <th>Studio</th>
+                  <th>Status</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {attendanceRecords.map((r) => (
+                  <tr key={r.id}>
+                    <td>{String(r.session_date).slice(0, 10)}</td>
+                    <td>
+                      {r.student_name || "—"}
+                      <br />
+                      <span className="muted">{r.student_email}</span>
+                    </td>
+                    <td>{r.class_title || "—"}</td>
+                    <td>{r.outlet_name || "—"}</td>
+                    <td>
+                      {r.present ? (
+                        <span className="badge paid">Present</span>
+                      ) : (
+                        <span className="badge failed">Absent</span>
+                      )}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={async () => {
+                          await api(`/api/admin/attendance/${r.id}`, {
+                            method: "DELETE",
+                          });
+                          loadAttendance();
+                        }}
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 ))}

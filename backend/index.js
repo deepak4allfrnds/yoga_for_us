@@ -930,6 +930,170 @@ app.delete("/api/admin/schedules/:id", requireAdmin, async (req, res) => {
   }
 });
 
+app.get("/api/admin/outlets", requireAdmin, async (_req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM outlets ORDER BY id");
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load studios" });
+  }
+});
+
+app.post("/api/admin/outlets", requireAdmin, async (req, res) => {
+  const { name, address, timings, phone } = req.body;
+  if (!name || !address || !timings) {
+    return res.status(400).json({ error: "Studio name, address, and timings are required" });
+  }
+  try {
+    const result = await db.query(
+      `INSERT INTO outlets (name, address, timings, phone)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [name, address, timings, phone || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not add studio" });
+  }
+});
+
+app.put("/api/admin/outlets/:id", requireAdmin, async (req, res) => {
+  const { name, address, timings, phone } = req.body;
+  if (!name || !address || !timings) {
+    return res.status(400).json({ error: "Studio name, address, and timings are required" });
+  }
+  try {
+    const result = await db.query(
+      `UPDATE outlets SET name = $1, address = $2, timings = $3, phone = $4
+       WHERE id = $5 RETURNING *`,
+      [name, address, timings, phone || null, req.params.id]
+    );
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: "Studio not found" });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not update studio" });
+  }
+});
+
+app.delete("/api/admin/outlets/:id", requireAdmin, async (req, res) => {
+  try {
+    await db.query("DELETE FROM outlets WHERE id = $1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not delete studio" });
+  }
+});
+
+app.get("/api/admin/attendance", requireAdmin, async (req, res) => {
+  const { outlet_id, class_id, from, to, session_date } = req.query;
+  try {
+    await ensureScheduleTables();
+    const params = [];
+    const where = [];
+    if (outlet_id) {
+      params.push(outlet_id);
+      where.push(`a.outlet_id = $${params.length}`);
+    }
+    if (class_id) {
+      params.push(class_id);
+      where.push(`a.class_id = $${params.length}`);
+    }
+    if (session_date) {
+      params.push(session_date);
+      where.push(`a.session_date = $${params.length}`);
+    } else {
+      if (from) {
+        params.push(from);
+        where.push(`a.session_date >= $${params.length}`);
+      }
+      if (to) {
+        params.push(to);
+        where.push(`a.session_date <= $${params.length}`);
+      }
+    }
+    const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const result = await db.query(
+      `SELECT a.*, u.name AS student_name, u.email AS student_email, u.phone AS student_phone,
+              c.title AS class_title, o.name AS outlet_name
+       FROM attendance a
+       LEFT JOIN users u ON u.id = a.user_id
+       LEFT JOIN classes c ON c.id = a.class_id
+       LEFT JOIN outlets o ON o.id = a.outlet_id
+       ${clause}
+       ORDER BY a.session_date DESC, u.name`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load attendance records" });
+  }
+});
+
+app.get("/api/admin/attendance/roster", requireAdmin, async (req, res) => {
+  const { outlet_id, class_id, session_date } = req.query;
+  if (!outlet_id || !class_id || !session_date) {
+    return res.status(400).json({ error: "Studio, class, and date are required" });
+  }
+  try {
+    await ensureScheduleTables();
+    const result = await db.query(
+      `SELECT u.id AS user_id, u.name, u.email, u.phone,
+              e.outlet_id, e.class_id,
+              a.id AS attendance_id, a.present, a.session_date
+       FROM class_enrollments e
+       JOIN users u ON u.id = e.user_id
+       LEFT JOIN attendance a
+         ON a.user_id = e.user_id
+        AND a.class_id = e.class_id
+        AND a.session_date = $3
+       WHERE e.mode = 'studio' AND e.outlet_id = $1 AND e.class_id = $2
+       ORDER BY u.name`,
+      [outlet_id, class_id, session_date]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load class roster" });
+  }
+});
+
+app.post("/api/admin/attendance", requireAdmin, async (req, res) => {
+  const { user_id, class_id, outlet_id, session_date, present } = req.body;
+  if (!user_id || !class_id || !session_date) {
+    return res.status(400).json({ error: "Student, class, and date are required" });
+  }
+  try {
+    const result = await db.query(
+      `INSERT INTO attendance (user_id, class_id, outlet_id, session_date, present)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (user_id, class_id, session_date) DO UPDATE
+       SET present = EXCLUDED.present, outlet_id = EXCLUDED.outlet_id
+       RETURNING *`,
+      [user_id, class_id, outlet_id || null, session_date, present !== false]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not mark attendance" });
+  }
+});
+
+app.delete("/api/admin/attendance/:id", requireAdmin, async (req, res) => {
+  try {
+    await db.query("DELETE FROM attendance WHERE id = $1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not delete attendance" });
+  }
+});
+
 const clientDist = path.join(__dirname, "../frontend/dist");
 if (process.env.NODE_ENV === "production" && fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
