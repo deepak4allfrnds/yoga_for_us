@@ -12,11 +12,13 @@ import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import ProtectAdmin from "./components/ProtectAdmin";
+import PageLoader from "./components/PageLoader";
 
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <PageLoader />
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/courses/:id" element={<CourseDetail />} />
