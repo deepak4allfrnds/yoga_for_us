@@ -2,7 +2,7 @@ require("dotenv").config();
 const bcrypt = require("bcryptjs");
 const { pool } = require("./db");
 
-async function migrate() {
+async function ensureAdminUser() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -17,23 +17,36 @@ async function migrate() {
     )
   `);
 
-  const email = process.env.ADMIN_EMAIL || "admin@harmonyyoga.com";
+  const email = String(process.env.ADMIN_EMAIL || "admin@yoga.com")
+    .trim()
+    .toLowerCase();
   const password = process.env.ADMIN_PASSWORD || "admin123";
   const hash = await bcrypt.hash(password, 10);
+  const emails = new Set([email, "admin@yoga.com"]);
 
-  await pool.query(
-    `INSERT INTO users (name, email, password_hash, role)
-     VALUES ($1, $2, $3, 'admin')
-     ON CONFLICT (email) DO UPDATE
-     SET password_hash = EXCLUDED.password_hash, role = 'admin', name = EXCLUDED.name`,
-    ["Studio Admin", email, hash]
-  );
+  for (const adminEmail of emails) {
+    await pool.query(
+      `INSERT INTO users (name, email, password_hash, role)
+       VALUES ($1, $2, $3, 'admin')
+       ON CONFLICT (email) DO UPDATE
+       SET password_hash = EXCLUDED.password_hash, role = 'admin', name = EXCLUDED.name`,
+      ["Studio Admin", adminEmail, hash]
+    );
+  }
 
-  console.log("Users table ready. Admin:", email);
+  console.log("Users table ready. Admin:", [...emails].join(", "));
+}
+
+async function migrate() {
+  await ensureAdminUser();
   await pool.end();
 }
 
-migrate().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  migrate().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = { ensureAdminUser };

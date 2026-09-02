@@ -16,6 +16,7 @@ const {
   googleWriteUrl,
 } = require("./googleReviews");
 const { ensureScheduleTables } = require("./migrate-schedule");
+const { ensureAdminUser } = require("./migrate-users");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -1107,6 +1108,13 @@ if (process.env.NODE_ENV === "production" && fs.existsSync(clientDist)) {
 }
 
 const HOST = process.env.HOST || "0.0.0.0";
-app.listen(PORT, HOST, () => {
-  console.log(`Harmony Yoga API running on http://${HOST}:${PORT}`);
-});
+ensureAdminUser()
+  .then(() => {
+    app.listen(PORT, HOST, () => {
+      console.log(`Harmony Yoga API running on http://${HOST}:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("Could not create admin user", err);
+    process.exit(1);
+  });

@@ -2,10 +2,12 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { api } from "../api";
+import { useAuth } from "../AuthContext";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("admin@harmonyyoga.com");
+  const { setSession } = useAuth();
+  const [email, setEmail] = useState("admin@yoga.com");
   const [password, setPassword] = useState("admin123");
   const [error, setError] = useState("");
 
@@ -17,7 +19,11 @@ export default function AdminLogin() {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      localStorage.setItem("yoga_admin_token", data.token);
+      if (data.user?.role !== "admin") {
+        setError("This account is not a studio admin");
+        return;
+      }
+      setSession(data.token, data.user);
       navigate("/admin/dashboard");
     } catch (err) {
       setError(err.message);
@@ -53,7 +59,7 @@ export default function AdminLogin() {
               Sign in
             </button>
             {error ? <p className="error">{error}</p> : null}
-            <p className="muted">Default: admin@harmonyyoga.com / admin123</p>
+            <p className="muted">Default: admin@yoga.com / admin123</p>
           </form>
         </div>
       </section>

@@ -1,6 +1,7 @@
 require("dotenv").config();
 const { spawnSync } = require("child_process");
 const { Pool } = require("pg");
+const { poolOptions } = require("./db");
 
 function run(script) {
   const result = spawnSync(process.execPath, [script], {
@@ -14,7 +15,7 @@ function run(script) {
 }
 
 async function waitForDatabase() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new Pool(poolOptions());
   for (let attempt = 1; attempt <= 40; attempt += 1) {
     try {
       await pool.query("SELECT 1");

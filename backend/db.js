@@ -21,4 +21,10 @@ pool.on("error", (err) => {
 module.exports = {
   query: (text, params) => pool.query(text, params),
   pool,
+  poolOptions: () => ({
+    connectionString: process.env.DATABASE_URL,
+    ssl: useSsl(process.env.DATABASE_URL)
+      ? { rejectUnauthorized: false }
+      : undefined,
+  }),
 };
