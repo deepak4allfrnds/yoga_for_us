@@ -1,11 +1,28 @@
 import { useEffect, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useSearchParams } from "react-router-dom";
 import { api, money, imageSrc } from "../api";
 import { useAuth } from "../AuthContext";
 import { DAYS } from "../scheduleUtils";
 import AttendanceCalendar from "../components/AttendanceCalendar";
+import AdminStudio from "./AdminStudio";
 
 const WEEKDAYS = DAYS.filter((d) => d.id <= 5);
+const ADMIN_TABS = [
+  "payments",
+  "classes",
+  "trainers",
+  "media",
+  "outlets",
+  "schedules",
+  "attendance",
+  "contacts",
+  "settings",
+  "trials",
+  "private",
+  "workshops",
+  "members",
+  "qr",
+];
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -27,8 +44,16 @@ function emptyWeekDays() {
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const { logout, isAdmin } = useAuth();
-  const [tab, setTab] = useState("payments");
+  const [tab, setTabState] = useState(() => {
+    const next = params.get("tab");
+    return ADMIN_TABS.includes(next) ? next : "payments";
+  });
+  function setTab(next) {
+    setTabState(next);
+    setParams(next === "payments" ? {} : { tab: next }, { replace: true });
+  }
   const [payments, setPayments] = useState({ payments: [], summary: {} });
   const [classes, setClasses] = useState([]);
   const [trainersData, setTrainersData] = useState({ trainers: [], reviews: [] });
@@ -115,6 +140,7 @@ export default function AdminDashboard() {
     is_home_featured: false,
   });
   const [error, setError] = useState("");
+  const [weekNotice, setWeekNotice] = useState("");
 
   useEffect(() => {
     if (!isAdmin) {
@@ -150,15 +176,25 @@ export default function AdminDashboard() {
         r.status === "rejected" &&
         String(r.reason?.message || "").includes("sign in")
     );
-    if (authFail) {
-      localStorage.removeItem("yoga_admin_token");
-      navigate("/admin");
+    if (authFail && !isAdmin) {
+      navigate("/login");
     }
   }
 
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    if (tab === "schedules") {
+      api("/api/admin/schedules")
+        .then(setScheduleData)
+        .catch((err) => setError(err.message));
+    }
+    if (tab === "attendance") {
+      loadAttendance();
+    }
+  }, [tab]);
 
   useEffect(() => {
     if (!weekPlan.outlet_id || !weekPlan.class_id) return;
@@ -182,18 +218,22 @@ export default function AdminDashboard() {
     setWeekPlan((prev) => ({ ...prev, days: next }));
   }, [weekPlan.outlet_id, weekPlan.class_id, weekPlan.mode, scheduleData.schedules]);
 
-  async function uploadImage(file, setter, form) {
+  async function uploadImage(file, setter) {
     const body = new FormData();
     body.append("image", file);
     const data = await api("/api/admin/upload", { method: "POST", body });
-    setter({ ...form, image_url: data.image_url });
+    setter((prev) => ({ ...prev, image_url: data.image_url }));
   }
 
   async function uploadMediaFile(file) {
     const body = new FormData();
     body.append("file", file);
     const data = await api("/api/admin/upload-media", { method: "POST", body });
-    setMediaForm((prev) => ({ ...prev, url: data.url }));
+    setMediaForm((prev) => ({
+      ...prev,
+      url: data.url,
+      title: prev.title || file.name.replace(/\.[^.]+$/, ""),
+    }));
   }
 
   async function saveMedia(e) {
@@ -393,88 +433,31 @@ export default function AdminDashboard() {
         <h2 className="serif" style={{ marginTop: 0 }}>
           Studio Admin
         </h2>
-        <a
-          href="#payments"
-          className={tab === "payments" ? "active" : ""}
-          onClick={(e) => {
-            e.preventDefault();
-            setTab("payments");
-          }}
-        >
-          Payments
-        </a>
-        <a
-          href="#classes"
-          className={tab === "classes" ? "active" : ""}
-          onClick={(e) => {
-            e.preventDefault();
-            setTab("classes");
-          }}
-        >
-          Yoga classes
-        </a>
-        <a
-          href="#trainers"
-          className={tab === "trainers" ? "active" : ""}
-          onClick={(e) => {
-            e.preventDefault();
-            setTab("trainers");
-          }}
-        >
-          Teachers
-        </a>
-        <a
-          href="#media"
-          className={tab === "media" ? "active" : ""}
-          onClick={(e) => {
-            e.preventDefault();
-            setTab("media");
-          }}
-        >
-          Photos & videos
-        </a>
-        <a
-          href="#outlets"
-          className={tab === "outlets" ? "active" : ""}
-          onClick={(e) => {
-            e.preventDefault();
-            setTab("outlets");
-          }}
-        >
-          Studios
-        </a>
-        <a
-          href="#schedules"
-          className={tab === "schedules" ? "active" : ""}
-          onClick={(e) => {
-            e.preventDefault();
-            setTab("schedules");
-            loadAll();
-          }}
-        >
-          Studio schedule
-        </a>
-        <a
-          href="#attendance"
-          className={tab === "attendance" ? "active" : ""}
-          onClick={(e) => {
-            e.preventDefault();
-            setTab("attendance");
-            loadAttendance();
-          }}
-        >
-          Attendance
-        </a>
-        <a
-          href="#contacts"
-          className={tab === "contacts" ? "active" : ""}
-          onClick={(e) => {
-            e.preventDefault();
-            setTab("contacts");
-          }}
-        >
-          Contact leads
-        </a>
+        {[
+          ["payments", "Payments"],
+          ["classes", "Yoga classes"],
+          ["trainers", "Teachers"],
+          ["media", "Photos & videos"],
+          ["outlets", "Studios"],
+          ["schedules", "Studio schedule"],
+          ["attendance", "Attendance"],
+          ["contacts", "Contact leads"],
+          ["settings", "Social & maps"],
+          ["trials", "Free trials"],
+          ["private", "Private bookings"],
+          ["workshops", "Workshops & trips"],
+          ["members", "Memberships"],
+          ["qr", "Attendance QR"],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={tab === id ? "active" : ""}
+            onClick={() => setTab(id)}
+          >
+            {label}
+          </button>
+        ))}
         <NavLink to="/">View website</NavLink>
         <button type="button" onClick={signOut}>
           Sign out
@@ -599,7 +582,7 @@ export default function AdminDashboard() {
                   accept="image/*"
                   onChange={(e) =>
                     e.target.files[0] &&
-                    uploadImage(e.target.files[0], setClassForm, classForm)
+                    uploadImage(e.target.files[0], setClassForm)
                   }
                 />
               </label>
@@ -761,7 +744,7 @@ export default function AdminDashboard() {
                   accept="image/*"
                   onChange={(e) =>
                     e.target.files[0] &&
-                    uploadImage(e.target.files[0], setTrainerForm, trainerForm)
+                    uploadImage(e.target.files[0], setTrainerForm)
                   }
                 />
               </label>
@@ -976,13 +959,18 @@ export default function AdminDashboard() {
                   </thead>
                   <tbody>
                     {WEEKDAYS.map((d) => {
-                      const row = weekPlan.days[d.id];
+                      const row = weekPlan.days[d.id] || {
+                        enabled: true,
+                        start_time: "07:00",
+                        end_time: "08:00",
+                        trainer_id: "",
+                      };
                       return (
                         <tr key={d.id}>
                           <td>
                             <input
                               type="checkbox"
-                              checked={row.enabled}
+                              checked={Boolean(row.enabled)}
                               onChange={(e) =>
                                 updateWeekDay(d.id, "enabled", e.target.checked)
                               }
@@ -994,7 +982,7 @@ export default function AdminDashboard() {
                           <td>
                             <input
                               type="time"
-                              value={row.start_time}
+                              value={row.start_time || "07:00"}
                               onChange={(e) =>
                                 updateWeekDay(d.id, "start_time", e.target.value)
                               }
@@ -1003,7 +991,7 @@ export default function AdminDashboard() {
                           <td>
                             <input
                               type="time"
-                              value={row.end_time}
+                              value={row.end_time || "08:00"}
                               onChange={(e) =>
                                 updateWeekDay(d.id, "end_time", e.target.value)
                               }
@@ -1011,7 +999,7 @@ export default function AdminDashboard() {
                           </td>
                           <td>
                             <select
-                              value={row.trainer_id}
+                              value={row.trainer_id || ""}
                               onChange={(e) =>
                                 updateWeekDay(d.id, "trainer_id", e.target.value)
                               }
@@ -1779,6 +1767,10 @@ export default function AdminDashboard() {
             </table>
           </>
         )}
+
+        {["settings", "trials", "private", "workshops", "members", "qr"].includes(tab) ? (
+          <AdminStudio tab={tab} classes={classes} outlets={outlets} />
+        ) : null}
       </main>
     </div>
   );

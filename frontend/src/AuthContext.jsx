@@ -20,11 +20,13 @@ export function AuthProvider({ children }) {
         setUser(data.user);
         localStorage.setItem("yoga_user", JSON.stringify(data.user));
       })
-      .catch(() => {
-        localStorage.removeItem("yoga_auth_token");
-        localStorage.removeItem("yoga_user");
-        localStorage.removeItem("yoga_admin_token");
-        setUser(null);
+      .catch((err) => {
+        if (err?.status === 401) {
+          localStorage.removeItem("yoga_auth_token");
+          localStorage.removeItem("yoga_user");
+          localStorage.removeItem("yoga_admin_token");
+          setUser(null);
+        }
       });
   }, []);
 

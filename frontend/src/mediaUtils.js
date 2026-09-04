@@ -7,7 +7,11 @@ export function youtubeId(url) {
 }
 
 export function isDirectVideo(url) {
-  return /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url || "") || String(url).includes("/uploads/");
+  return (
+    /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url || "") ||
+    String(url).includes("/uploads/") ||
+    String(url).includes("/api/files/")
+  );
 }
 
 export function mediaSrc(url) {

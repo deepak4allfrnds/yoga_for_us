@@ -1,16 +1,17 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
 
 export default function Login() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { setSession } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-async function submit(e) {
+  async function submit(e) {
     e.preventDefault();
     setError("");
     try {
@@ -19,7 +20,12 @@ async function submit(e) {
         body: JSON.stringify({ email, password }),
       });
       setSession(data.token, data.user);
-      navigate(data.user.role === "admin" ? "/admin/dashboard" : "/");
+      const next = params.get("next");
+      if (next && next.startsWith("/")) {
+        navigate(next);
+      } else {
+        navigate(data.user.role === "admin" ? "/admin/dashboard" : "/dashboard");
+      }
     } catch (e) {
       setError(e.message);
     }

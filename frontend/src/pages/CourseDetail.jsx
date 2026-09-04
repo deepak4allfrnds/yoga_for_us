@@ -184,12 +184,18 @@ export default function CourseDetail() {
                       Online class
                     </button>
                   </div>
-                  <Link
-                    className="btn btn-outline"
-                    to={`/courses/${course.id}/pay?mode=${encodeURIComponent(mode)}&outlet_id=${encodeURIComponent(outletId)}`}
-                  >
-                    Continue to payment
-                  </Link>
+                  {course.title === "Personal/Private Yoga" ? (
+                    <Link className="btn btn-green" to="/private">
+                      Pick date & time, then pay
+                    </Link>
+                  ) : (
+                    <Link
+                      className="btn btn-outline"
+                      to={`/courses/${course.id}/pay?mode=${encodeURIComponent(mode)}&outlet_id=${encodeURIComponent(outletId)}`}
+                    >
+                      Continue to payment
+                    </Link>
+                  )}
                 </div>
               </article>
 

@@ -29,13 +29,16 @@ export async function api(path, options = {}) {
       headers.Authorization = `Bearer ${token()}`;
     }
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    if (res.status === 404) {
-      throw new Error(data.error || "Not found. Restart the API so new admin routes are loaded.");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(
+        res.status === 404
+          ? data.error || "Not found. Restart the API so new admin routes are loaded."
+          : data.error || "Request failed"
+      );
+      err.status = res.status;
+      throw err;
     }
-    throw new Error(data.error || "Request failed");
-  }
     return data;
   } finally {
     pending = Math.max(0, pending - 1);
@@ -53,7 +56,9 @@ export function money(value) {
 
 export function imageSrc(url) {
   if (!url) return "";
+  if (url.startsWith("blob:") || url.startsWith("data:")) return url;
   if (url.startsWith("http")) return url;
-  const API_BASE = import.meta.env.VITE_API_URL || "";
-  return `${API_BASE}${url}`;
+  const base = import.meta.env.VITE_API_URL || "";
+  if (url.startsWith("/")) return `${base}${url}`;
+  return `${base}/${url}`;
 }

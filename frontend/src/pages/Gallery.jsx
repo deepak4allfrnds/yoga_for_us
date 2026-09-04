@@ -3,9 +3,17 @@ import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import { api, imageSrc } from "../api";
 import MediaGrid from "../components/MediaGrid";
+import { SocialLinks } from "../components/SocialLinks";
 
 export default function Gallery() {
-  const [data, setData] = useState({ trainers: [], outlets: [], media: [] });
+  const [data, setData] = useState({
+    trainers: [],
+    outlets: [],
+    media: [],
+    settings: null,
+    maps_embed: "",
+    maps_link: "",
+  });
 
   useEffect(() => {
     api("/api/public/gallery").then(setData).catch(console.error);
@@ -71,7 +79,43 @@ export default function Gallery() {
           </div>
         </div>
       </section>
-      <Footer outlets={data.outlets} />
+      <section className="section">
+        <div className="container">
+          <div className="section-head">
+            <div>
+              <p className="muted">Find us</p>
+              <h2>Studio location</h2>
+            </div>
+          </div>
+          {(data.outlets || []).map((o) => (
+            <p key={o.id}>
+              <strong>{o.name}</strong>
+              <br />
+              {o.address}
+              <br />
+              {o.phone} · {o.timings}
+            </p>
+          ))}
+          <SocialLinks settings={data.settings} />
+          {data.maps_link ? (
+            <p>
+              <a href={data.maps_link} target="_blank" rel="noreferrer">
+                Open in Google Maps
+              </a>
+            </p>
+          ) : null}
+          {data.maps_embed ? (
+            <iframe
+              className="maps-embed"
+              title="Studio map"
+              src={data.maps_embed}
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          ) : null}
+        </div>
+      </section>
+      <Footer outlets={data.outlets} settings={data.settings} />
     </>
   );
 }

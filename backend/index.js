@@ -18,7 +18,10 @@ const {
 const { ensureScheduleTables } = require("./migrate-schedule");
 const { ensureAdminUser } = require("./migrate-users");
 const { ensureMediaTable } = require("./migrate-media");
+const { ensureFileCache, storeFileBuffer, importDiskUploads, rewriteStoredUrls } = require("./migrate-files");
 const { ensurePaymentColumns, PAYMENT_SELECT } = require("./migrate-payments");
+const { getSettings, ensureStudioTables, fulfillPaidPayment } = require("./migrate-studio");
+const { registerStudioRoutes, resolveOrderItem } = require("./studioRoutes");
 const {
   useTestSdk,
   createCashfreeOrder,
@@ -34,14 +37,20 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (_req, file, cb) => {
-    const safe = file.originalname.replace(/[^\w.-]/g, "_");
-    cb(null, `${Date.now()}-${safe}`);
-  },
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 80 * 1024 * 1024 },
 });
-const upload = multer({ storage, limits: { fileSize: 80 * 1024 * 1024 } });
+
+async function persistUpload(file) {
+  const safe = file.originalname.replace(/[^\w.-]/g, "_");
+  const filename = `${Date.now()}-${safe}`;
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  fs.writeFileSync(path.join(uploadsDir, filename), file.buffer);
+  return storeFileBuffer(filename, file.mimetype, file.buffer);
+}
 
 function corsOrigin() {
   const raw = process.env.CLIENT_ORIGIN;
@@ -57,7 +66,35 @@ app.use(
   })
 );
 app.use(express.json());
-app.use("/uploads", express.static(uploadsDir));
+app.use(
+  "/uploads",
+  express.static(uploadsDir, {
+    maxAge: "365d",
+    immutable: true,
+  })
+);
+
+app.get("/api/files/:id", async (req, res) => {
+  try {
+    await ensureFileCache();
+    const result = await db.query(
+      "SELECT filename, mime_type, data FROM file_cache WHERE id = $1",
+      [req.params.id]
+    );
+    const row = result.rows[0];
+    if (!row) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    res.setHeader("Content-Type", row.mime_type || "application/octet-stream");
+    res.setHeader("Content-Disposition", `inline; filename="${row.filename}"`);
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    res.send(row.data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load file" });
+  }
+});
+registerStudioRoutes(app);
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
@@ -215,8 +252,9 @@ app.get("/api/public/home", async (_req, res) => {
     await ensureReviewColumns();
     await ensureScheduleTables();
     await ensureMediaTable();
+    await ensureStudioTables();
     await syncGoogleReviews(false).catch((err) => console.error(err));
-    const [classes, reviews, outlets, site, schedules, trainers, media] = await Promise.all([
+    const [classes, reviews, outlets, site, schedules, trainers, media, settings] = await Promise.all([
       db.query("SELECT * FROM classes ORDER BY id"),
       db.query(
         `SELECT r.*, t.name AS trainer_name
@@ -239,6 +277,7 @@ app.get("/api/public/home", async (_req, res) => {
       db.query(
         "SELECT * FROM media_items ORDER BY sort_order, id DESC LIMIT 6"
       ).catch(() => ({ rows: [] })),
+      getSettings(),
     ]);
     const siteRow = site.rows[0] || null;
     res.json({
@@ -249,6 +288,7 @@ app.get("/api/public/home", async (_req, res) => {
       schedules: schedules.rows,
       trainers: trainers.rows,
       media: media.rows,
+      settings,
       google_review_url: googleWriteUrl(
         process.env.GOOGLE_PLACE_ID || siteRow?.google_place_id
       ),
@@ -275,20 +315,34 @@ app.get("/api/public/about", async (_req, res) => {
 app.get("/api/public/gallery", async (_req, res) => {
   try {
     await ensureMediaTable();
+    await ensureStudioTables();
     const trainers = await db.query("SELECT * FROM trainers ORDER BY id");
     const reviews = await db.query(
       "SELECT * FROM reviews ORDER BY trainer_id, id"
     );
     const outlets = await db.query("SELECT * FROM outlets ORDER BY id");
     const site = await getSite();
+    const settings = await getSettings();
     const media = await db.query(
       "SELECT * FROM media_items ORDER BY sort_order, id DESC"
     );
+    const maps_embed =
+      settings?.maps_embed_url ||
+      `https://maps.google.com/maps?q=${encodeURIComponent(
+        outlets.rows[0]?.address || "Yoga For Us"
+      )}&output=embed`;
     res.json({
       trainers: trainers.rows,
       reviews: reviews.rows,
       outlets: outlets.rows,
       media: media.rows,
+      settings,
+      maps_embed,
+      maps_link:
+        settings?.maps_link ||
+        `https://maps.google.com/?q=${encodeURIComponent(
+          outlets.rows[0]?.address || "Yoga For Us"
+        )}`,
       google_review_url: googleWriteUrl(
         process.env.GOOGLE_PLACE_ID || site?.google_place_id
       ),
@@ -421,30 +475,30 @@ app.post("/api/public/enroll", async (req, res) => {
 
 app.post("/api/payments/cashfree/order", optionalAuth, async (req, res) => {
   const { student_name, email, phone, class_id, mode, outlet_id } = req.body;
-  if (!student_name || !email || !class_id) {
-    return res.status(400).json({ error: "Name, email, and class are required" });
+  if (!student_name || !email) {
+    return res.status(400).json({ error: "Name and email are required" });
   }
   try {
     await ensurePaymentColumns();
-    const course = await db.query("SELECT * FROM classes WHERE id = $1", [class_id]);
-    if (!course.rows[0]) {
-      return res.status(404).json({ error: "Class not found" });
-    }
-    const amount = Math.max(Number(course.rows[0].price || 0), 1);
+    await ensureStudioTables();
+    const item = await resolveOrderItem(req.body);
+    const amount = item.amount;
     const payment = await db.query(
       `INSERT INTO payments
-         (student_name, email, phone, class_id, amount, status, payment_method, user_id, mode, outlet_id)
-       VALUES ($1, $2, $3, $4, $5, 'pending', 'cashfree', $6, $7, $8)
+         (student_name, email, phone, class_id, amount, status, payment_method, user_id, mode, outlet_id, kind, ref_id)
+       VALUES ($1, $2, $3, $4, $5, 'pending', 'cashfree', $6, $7, $8, $9, $10)
        RETURNING *`,
       [
         student_name.trim(),
         email.trim().toLowerCase(),
         phone || null,
-        class_id,
+        item.class_id || class_id || null,
         amount,
         req.user?.id || null,
-        mode || null,
+        mode || item.kind,
         mode === "studio" ? outlet_id || null : null,
+        item.kind,
+        item.ref_id,
       ]
     );
     const row = payment.rows[0];
@@ -462,7 +516,7 @@ app.post("/api/payments/cashfree/order", optionalAuth, async (req, res) => {
         name: student_name.trim(),
         email: email.trim().toLowerCase(),
         phone: digits,
-        note: course.rows[0].title,
+        note: item.title,
       },
     });
     await db.query("UPDATE payments SET cf_order_id = $1 WHERE id = $2", [
@@ -476,11 +530,12 @@ app.post("/api/payments/cashfree/order", optionalAuth, async (req, res) => {
       test_sdk: Boolean(cf.test_sdk),
       environment: process.env.CASHFREE_ENV === "production" ? "production" : "sandbox",
       amount,
-      class_title: course.rows[0].title,
+      class_title: item.title,
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message || "Could not start Cashfree payment" });
+    const status = err.status || 500;
+    res.status(status).json({ error: err.message || "Could not start Cashfree payment" });
   }
 });
 
@@ -509,6 +564,10 @@ app.post("/api/payments/cashfree/verify", optionalAuth, async (req, res) => {
        WHERE id = $3`,
       [nextStatus, cfOrder.cf_payment_id || cfOrder.payment_id || null, row.id]
     );
+    if (paid) {
+      const fresh = await db.query("SELECT * FROM payments WHERE id = $1", [row.id]);
+      await fulfillPaidPayment(fresh.rows[0]).catch((err) => console.error(err));
+    }
     const detail = await db.query(`${PAYMENT_SELECT} WHERE p.id = $1`, [row.id]);
     res.json({
       payment: detail.rows[0],
@@ -705,18 +764,30 @@ app.post("/api/user/attendance", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/admin/upload", requireAdmin, upload.single("image"), (req, res) => {
+app.post("/api/admin/upload", requireAdmin, upload.single("image"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No image uploaded" });
   }
-  res.json({ image_url: `/uploads/${req.file.filename}`, url: `/uploads/${req.file.filename}` });
+  try {
+    const stored = await persistUpload(req.file);
+    res.json({ image_url: stored.url, url: stored.url, file_id: stored.id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not store image in the database" });
+  }
 });
 
-app.post("/api/admin/upload-media", requireAdmin, upload.single("file"), (req, res) => {
+app.post("/api/admin/upload-media", requireAdmin, upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
-  res.json({ url: `/uploads/${req.file.filename}` });
+  try {
+    const stored = await persistUpload(req.file);
+    res.json({ url: stored.url, file_id: stored.id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not store file in the database" });
+  }
 });
 
 app.get("/api/admin/media", requireAdmin, async (_req, res) => {
@@ -1349,6 +1420,10 @@ if (process.env.NODE_ENV === "production" && fs.existsSync(clientDist)) {
 const HOST = process.env.HOST || "0.0.0.0";
 ensurePaymentColumns()
   .then(() => ensureMediaTable())
+  .then(() => ensureFileCache())
+  .then(() => importDiskUploads())
+  .then(() => rewriteStoredUrls())
+  .then(() => ensureStudioTables())
   .then(() => ensureAdminUser())
   .then(() => {
     app.listen(PORT, HOST, () => {

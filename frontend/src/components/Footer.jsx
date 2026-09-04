@@ -1,4 +1,20 @@
-export default function Footer({ outlets = [] }) {
+import { useEffect, useState } from "react";
+import { SocialLinks } from "./SocialLinks";
+import { api } from "../api";
+
+export default function Footer({ outlets = [], settings = null }) {
+  const [fetched, setFetched] = useState(null);
+
+  useEffect(() => {
+    if (settings && outlets.length) return;
+    api("/api/public/settings")
+      .then(setFetched)
+      .catch(() => {});
+  }, [settings, outlets.length]);
+
+  const list = outlets.length ? outlets : fetched?.outlets || [];
+  const social = settings || fetched?.settings;
+
   return (
     <footer className="footer">
       <div className="container footer-grid">
@@ -8,10 +24,11 @@ export default function Footer({ outlets = [] }) {
             White-and-green studios for everyday practice. Come for the asana,
             stay for the breath.
           </p>
+          <SocialLinks settings={social} />
         </div>
         <div>
           <h3 className="serif">Studio hours</h3>
-          {outlets.slice(0, 1).map((o) => (
+          {list.slice(0, 1).map((o) => (
             <p key={o.id}>
               {o.timings}
               <br />
@@ -21,7 +38,7 @@ export default function Footer({ outlets = [] }) {
         </div>
         <div>
           <h3 className="serif">All outlets</h3>
-          {outlets.map((o) => (
+          {list.map((o) => (
             <p key={o.id}>
               <strong>{o.name}</strong>
               <br />

@@ -8,6 +8,8 @@ async function ensurePaymentColumns() {
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS outlet_id INTEGER REFERENCES outlets(id) ON DELETE SET NULL;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS cf_order_id VARCHAR(120);
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS cf_payment_id VARCHAR(120);
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS kind VARCHAR(40) DEFAULT 'class';
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS ref_id INTEGER;
   `);
 }
 

@@ -6,6 +6,77 @@ import WeeklySchedule from "../components/WeeklySchedule";
 import ReviewForm from "../components/ReviewForm";
 import MediaGrid from "../components/MediaGrid";
 import { api, money, imageSrc } from "../api";
+import { useAuth } from "../AuthContext";
+
+function MemberHome() {
+  const { user, isAdmin } = useAuth();
+  const [dash, setDash] = useState(null);
+
+  useEffect(() => {
+    if (!user || isAdmin) return;
+    api("/api/user/dashboard")
+      .then(setDash)
+      .catch(() => setDash(null));
+  }, [user, isAdmin]);
+
+  if (!user) return null;
+
+  const expiry = dash?.active_membership?.expires_at
+    ? String(dash.active_membership.expires_at).slice(0, 10)
+    : null;
+  const present = (dash?.attendance || []).filter((a) => a.present).length;
+
+  return (
+    <section className="member-home">
+      <div className="container member-home-inner">
+        <div>
+          <p className="kicker">Welcome back</p>
+          <h2>Hello, {user.name?.split(" ")[0] || "friend"}</h2>
+          <p>
+            {isAdmin
+              ? "You are signed in as studio admin. Manage classes, payments, and attendance from the panel."
+              : expiry
+                ? `Your membership is active until ${expiry}.`
+                : "Your studio space is ready — membership, classes, attendance, and Meet links live here."}
+          </p>
+        </div>
+        <div className="member-home-cards">
+          {isAdmin ? (
+            <Link className="member-chip" to="/admin/dashboard">
+              Open admin panel
+            </Link>
+          ) : (
+            <>
+              <Link className="member-chip" to="/dashboard">
+                Dashboard
+                {present ? <span>{present} classes attended</span> : null}
+              </Link>
+              <Link className="member-chip" to="/membership">
+                Membership
+              </Link>
+              <Link className="member-chip" to="/private">
+                Book private class
+              </Link>
+              <Link className="member-chip" to="/workshops">
+                Workshops
+              </Link>
+              {dash?.meet_link ? (
+                <a className="member-chip" href={dash.meet_link} target="_blank" rel="noreferrer">
+                  Join Google Meet
+                </a>
+              ) : null}
+              {dash?.whatsapp_url ? (
+                <a className="member-chip" href={dash.whatsapp_url} target="_blank" rel="noreferrer">
+                  WhatsApp studio
+                </a>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function Home() {
   const [data, setData] = useState({
@@ -39,6 +110,7 @@ export default function Home() {
   return (
     <>
       <Navbar />
+      <MemberHome />
       <section className="banner">
         <div className="banner-copy">
           <p className="kicker">Move with care</p>
@@ -47,10 +119,18 @@ export default function Home() {
             Morning sun salutations, evening restore, and teacher-led courses
             across our green studios.
           </p>
+          <div className="banner-actions">
+            <Link className="btn btn-green" to="/trial">
+              Book free trial
+            </Link>
+            <Link className="btn btn-outline" to="/membership">
+              Premium membership
+            </Link>
+          </div>
         </div>
       </section>
 
-      <section className="section">
+      <section className="section" id="classes">
         <div className="container">
           <div className="section-head">
             <div>
@@ -77,16 +157,63 @@ export default function Home() {
                     {money(c.price)}
                   </Link>
                   <div className="mode-row">
-                    <Link className="btn btn-outline" to={`/courses/${c.id}?mode=studio`}>
-                      Studio offline
-                    </Link>
-                    <Link className="btn btn-outline" to={`/courses/${c.id}?mode=online`}>
-                      Online class
-                    </Link>
+                    {c.title === "Personal/Private Yoga" ? (
+                      <Link className="btn btn-green" to="/private">
+                        Book private session
+                      </Link>
+                    ) : (
+                      <>
+                        <Link className="btn btn-outline" to={`/courses/${c.id}?mode=studio`}>
+                          Studio offline
+                        </Link>
+                        <Link className="btn btn-outline" to={`/courses/${c.id}?mode=online`}>
+                          Online class
+                        </Link>
+                      </>
+                    )}
                   </div>
                 </div>
               </article>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="section alt" id="online">
+        <div className="container">
+          <div className="section-head">
+            <div>
+              <p className="muted">Live from home</p>
+              <h2>Online yoga classes</h2>
+            </div>
+            <Link className="btn btn-green" to="/online">
+              Class timetable
+            </Link>
+          </div>
+          <div className="grid-3">
+            <article className="card">
+              <div className="card-body">
+                <h3>Live classes</h3>
+                <p>Join scheduled sessions on Zoom or Google Meet.</p>
+              </div>
+            </article>
+            <article className="card">
+              <div className="card-body">
+                <h3>Monthly / quarterly / yearly</h3>
+                <p>3 month, 6 month, and 1 year online or studio + online plans.</p>
+                <Link to="/membership">See memberships</Link>
+              </div>
+            </article>
+            <article className="card">
+              <div className="card-body">
+                <h3>Access after payment</h3>
+                <p>
+                  Meet links and WhatsApp messages unlock automatically once
+                  Cashfree confirms payment.
+                </p>
+                <Link to="/workshops">Workshops & trips</Link>
+              </div>
+            </article>
           </div>
         </div>
       </section>
@@ -171,7 +298,7 @@ export default function Home() {
           </div>
         </div>
       </section>
-      <Footer outlets={data.outlets} />
+      <Footer outlets={data.outlets} settings={data.settings} />
     </>
   );
 }

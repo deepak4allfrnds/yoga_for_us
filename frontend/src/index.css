@@ -52,7 +52,7 @@ select {
 }
 
 .container {
-  width: min(1120px, calc(100% - 40px));
+  width: min(1180px, calc(100% - 40px));
   margin: 0 auto;
 }
 
@@ -60,18 +60,198 @@ select {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.96);
   border-bottom: 1px solid var(--line);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 8px 24px rgba(21, 77, 53, 0.04);
 }
 
 .header-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 76px;
-  gap: 16px;
+  min-height: 72px;
+  gap: 20px;
   position: relative;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-links,
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-actions {
+  margin-left: auto;
+  gap: 8px;
+}
+
+.nav a,
+.nav button.linkish,
+.nav-drop-btn {
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: var(--green-dark);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.nav a.active,
+.nav a:hover,
+.nav-drop-btn:hover,
+.nav-drop.is-open .nav-drop-btn {
+  background: var(--green-soft);
+}
+
+.nav-drop {
+  position: relative;
+}
+
+.nav-drop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-caret {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.nav-drop-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 220px;
+  padding: 8px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(21, 77, 53, 0.12);
+  flex-direction: column;
+  gap: 2px;
+  z-index: 30;
+}
+
+.nav-drop-menu a {
+  border-radius: 12px;
+  width: 100%;
+}
+
+.nav-drop:hover .nav-drop-menu,
+.nav-drop.is-open .nav-drop-menu {
+  display: flex;
+}
+
+.nav-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green-dark);
+  padding: 4px 8px 4px 4px;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.nav-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--green);
+  color: white;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+}
+
+.nav-cta {
+  padding: 9px 16px;
+  font-size: 14px;
+}
+
+.nav-signout {
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.member-home {
+  background:
+    linear-gradient(90deg, #e8f4ee, #f7fbf8 55%, #eaf6ef);
+  border-bottom: 1px solid var(--line);
+  padding: 22px 0;
+}
+
+.member-home-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr);
+  gap: 24px;
+  align-items: center;
+}
+
+.member-home h2 {
+  margin: 0 0 6px;
+  font-size: 32px;
+  color: var(--green-dark);
+}
+
+.member-home p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.member-home .kicker {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--green);
+  margin-bottom: 4px;
+}
+
+.member-home-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.member-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-weight: 700;
+  color: var(--green-dark);
+  min-width: 140px;
+  box-shadow: 0 8px 18px rgba(21, 77, 53, 0.04);
+}
+
+.member-chip span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.member-chip:hover {
+  border-color: var(--green);
+  background: var(--green-soft);
 }
 
 .logo {
@@ -100,35 +280,6 @@ select {
   place-items: center;
   font-family: "Cormorant Garamond", serif;
   font-size: 22px;
-}
-
-.nav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: nowrap;
-}
-
-.nav a,
-.nav button.linkish {
-  padding: 8px 14px;
-  border-radius: 999px;
-  color: var(--green-dark);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.nav a.active,
-.nav a:hover {
-  background: var(--green-soft);
-}
-
-.nav-user {
-  color: var(--muted);
-  padding: 8px 12px;
-  white-space: nowrap;
 }
 
 .nav-toggle {
@@ -219,6 +370,49 @@ select {
   font-size: clamp(42px, 6vw, 72px);
   line-height: 0.95;
   margin: 0 0 16px;
+}
+
+.banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.banner-actions .btn-outline {
+  color: white;
+  border-color: rgba(255, 255, 255, 0.75);
+  background: transparent;
+}
+
+.social-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  margin: 16px 0;
+}
+
+.social-row a {
+  font-weight: 600;
+  color: var(--green-dark);
+}
+
+.social-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.maps-embed {
+  width: 100%;
+  min-height: 320px;
+  border: 0;
+  border-radius: 16px;
+  margin-top: 16px;
+}
+
+.dash-grid {
+  margin-bottom: 24px;
 }
 
 .section {
@@ -433,7 +627,9 @@ select {
 }
 
 .admin-side a.active,
-.admin-side a:hover {
+.admin-side a:hover,
+.admin-side button.active,
+.admin-side button:hover {
   background: rgba(255, 255, 255, 0.12);
 }
 
@@ -625,6 +821,18 @@ select {
   border-radius: 16px;
 }
 
+@media (max-width: 1100px) {
+  .nav-user-name {
+    display: none;
+  }
+
+  .nav-links a,
+  .nav-drop-btn {
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+}
+
 @media (max-width: 900px) {
   .grid-3,
   .footer-grid,
@@ -662,7 +870,7 @@ select {
     flex-basis: 100%;
     flex-direction: column;
     align-items: stretch;
-    gap: 6px;
+    gap: 10px;
     padding: 8px 0 16px;
     background: transparent;
     border-bottom: 0;
@@ -674,14 +882,59 @@ select {
     display: flex;
   }
 
+  .nav-links,
+  .nav-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    margin-left: 0;
+    gap: 6px;
+  }
+
+  .nav-drop-menu {
+    position: static;
+    display: none;
+    box-shadow: none;
+    border: 0;
+    padding: 0 0 0 12px;
+    min-width: 0;
+    background: transparent;
+  }
+
+  .nav-drop.is-open .nav-drop-menu,
+  .header.is-open .nav-drop.is-open .nav-drop-menu {
+    display: flex;
+  }
+
+  .nav-drop:hover .nav-drop-menu {
+    display: none;
+  }
+
+  .nav-drop.is-open:hover .nav-drop-menu {
+    display: flex;
+  }
+
   .nav a,
   .nav .btn,
-  .nav-user {
+  .nav-user,
+  .nav-drop-btn {
     width: 100%;
     justify-content: flex-start;
     border-radius: 12px;
     padding: 12px 16px;
     background: var(--sand);
+  }
+
+  .nav a.active {
+    background: var(--green-soft);
+  }
+
+  .member-home-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .nav-user-name {
+    display: inline;
   }
 
   .nav a.active {
