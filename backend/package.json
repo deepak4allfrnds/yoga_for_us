@@ -11,7 +11,8 @@
     "db:users": "node migrate-users.js",
     "db:schedule": "node migrate-schedule.js",
     "db:reviews": "node migrate-reviews.js",
-    "db:payments": "node migrate-payments.js"
+    "db:payments": "node migrate-payments.js",
+    "db:media": "node migrate-media.js"
   },
   "keywords": [],
   "type": "commonjs",

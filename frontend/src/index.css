@@ -260,7 +260,31 @@ select {
   overflow: hidden;
 }
 
-.card img.cover {
+.media-cover,
+.media-frame {
+  width: 100%;
+  height: 210px;
+  object-fit: cover;
+  background: #0f241c;
+}
+
+.media-frame {
+  position: relative;
+  overflow: hidden;
+}
+
+.media-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.media-placeholder {
+  display: grid;
+  place-items: center;
+  color: white;
   width: 100%;
   height: 190px;
   object-fit: cover;

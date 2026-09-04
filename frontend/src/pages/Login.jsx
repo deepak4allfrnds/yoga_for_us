@@ -10,8 +10,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-
-  async function submit(e) {
+async function submit(e) {
     e.preventDefault();
     setError("");
     try {
@@ -21,8 +20,8 @@ export default function Login() {
       });
       setSession(data.token, data.user);
       navigate(data.user.role === "admin" ? "/admin/dashboard" : "/");
-    } catch (err) {
-      setError(err.message);
+    } catch (e) {
+      setError(e.message);
     }
   }
 
@@ -61,10 +60,7 @@ export default function Login() {
               <Link to="/forgot-password">Forgot password?</Link>
             </p>
             <p className="muted">
-              Studio admin: admin@yoga.com / admin123
-            </p>
-            <p className="muted">
-              New here? <Link to="/register">Create an account</Link>
+               New here?  <Link to="/register">Create an account</Link>
             </p>
           </form>
         </div>

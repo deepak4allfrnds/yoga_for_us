@@ -17,6 +17,7 @@ const {
 } = require("./googleReviews");
 const { ensureScheduleTables } = require("./migrate-schedule");
 const { ensureAdminUser } = require("./migrate-users");
+const { ensureMediaTable } = require("./migrate-media");
 const { ensurePaymentColumns, PAYMENT_SELECT } = require("./migrate-payments");
 const {
   useTestSdk,
@@ -40,7 +41,7 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}-${safe}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({ storage, limits: { fileSize: 80 * 1024 * 1024 } });
 
 function corsOrigin() {
   const raw = process.env.CLIENT_ORIGIN;
@@ -213,8 +214,9 @@ app.get("/api/public/home", async (_req, res) => {
   try {
     await ensureReviewColumns();
     await ensureScheduleTables();
+    await ensureMediaTable();
     await syncGoogleReviews(false).catch((err) => console.error(err));
-    const [classes, reviews, outlets, site, schedules, trainers] = await Promise.all([
+    const [classes, reviews, outlets, site, schedules, trainers, media] = await Promise.all([
       db.query("SELECT * FROM classes ORDER BY id"),
       db.query(
         `SELECT r.*, t.name AS trainer_name
@@ -234,6 +236,9 @@ app.get("/api/public/home", async (_req, res) => {
          ORDER BY s.outlet_id, s.day_of_week, s.start_time`
       ),
       db.query("SELECT id, name FROM trainers ORDER BY name"),
+      db.query(
+        "SELECT * FROM media_items ORDER BY sort_order, id DESC LIMIT 6"
+      ).catch(() => ({ rows: [] })),
     ]);
     const siteRow = site.rows[0] || null;
     res.json({
@@ -243,6 +248,7 @@ app.get("/api/public/home", async (_req, res) => {
       site: siteRow,
       schedules: schedules.rows,
       trainers: trainers.rows,
+      media: media.rows,
       google_review_url: googleWriteUrl(
         process.env.GOOGLE_PLACE_ID || siteRow?.google_place_id
       ),
@@ -268,16 +274,21 @@ app.get("/api/public/about", async (_req, res) => {
 
 app.get("/api/public/gallery", async (_req, res) => {
   try {
+    await ensureMediaTable();
     const trainers = await db.query("SELECT * FROM trainers ORDER BY id");
     const reviews = await db.query(
       "SELECT * FROM reviews ORDER BY trainer_id, id"
     );
     const outlets = await db.query("SELECT * FROM outlets ORDER BY id");
     const site = await getSite();
+    const media = await db.query(
+      "SELECT * FROM media_items ORDER BY sort_order, id DESC"
+    );
     res.json({
       trainers: trainers.rows,
       reviews: reviews.rows,
       outlets: outlets.rows,
+      media: media.rows,
       google_review_url: googleWriteUrl(
         process.env.GOOGLE_PLACE_ID || site?.google_place_id
       ),
@@ -698,7 +709,74 @@ app.post("/api/admin/upload", requireAdmin, upload.single("image"), (req, res) =
   if (!req.file) {
     return res.status(400).json({ error: "No image uploaded" });
   }
-  res.json({ image_url: `/uploads/${req.file.filename}` });
+  res.json({ image_url: `/uploads/${req.file.filename}`, url: `/uploads/${req.file.filename}` });
+});
+
+app.post("/api/admin/upload-media", requireAdmin, upload.single("file"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+  res.json({ url: `/uploads/${req.file.filename}` });
+});
+
+app.get("/api/admin/media", requireAdmin, async (_req, res) => {
+  try {
+    await ensureMediaTable();
+    const result = await db.query("SELECT * FROM media_items ORDER BY sort_order, id DESC");
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load media" });
+  }
+});
+
+app.post("/api/admin/media", requireAdmin, async (req, res) => {
+  const { media_type, title, caption, url, sort_order } = req.body;
+  if (!title || !url || !["image", "video"].includes(media_type)) {
+    return res.status(400).json({ error: "Type, title, and file or URL are required" });
+  }
+  try {
+    await ensureMediaTable();
+    const result = await db.query(
+      `INSERT INTO media_items (media_type, title, caption, url, sort_order)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [media_type, title.trim(), caption || "", url, Number(sort_order) || 0]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not add media" });
+  }
+});
+
+app.put("/api/admin/media/:id", requireAdmin, async (req, res) => {
+  const { media_type, title, caption, url, sort_order } = req.body;
+  if (!title || !url || !["image", "video"].includes(media_type)) {
+    return res.status(400).json({ error: "Type, title, and file or URL are required" });
+  }
+  try {
+    const result = await db.query(
+      `UPDATE media_items
+       SET media_type = $1, title = $2, caption = $3, url = $4, sort_order = $5
+       WHERE id = $6 RETURNING *`,
+      [media_type, title.trim(), caption || "", url, Number(sort_order) || 0, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Media not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not update media" });
+  }
+});
+
+app.delete("/api/admin/media/:id", requireAdmin, async (req, res) => {
+  try {
+    await db.query("DELETE FROM media_items WHERE id = $1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not delete media" });
+  }
 });
 
 app.get("/api/admin/payments", requireAdmin, async (_req, res) => {
@@ -1269,6 +1347,7 @@ if (process.env.NODE_ENV === "production" && fs.existsSync(clientDist)) {
 
 const HOST = process.env.HOST || "0.0.0.0";
 ensurePaymentColumns()
+  .then(() => ensureMediaTable())
   .then(() => ensureAdminUser())
   .then(() => {
     app.listen(PORT, HOST, () => {

@@ -97,7 +97,16 @@ export default function AdminDashboard() {
     mode: "studio",
     days: emptyWeekDays(),
   });
-  const [weekNotice, setWeekNotice] = useState("");
+  const [mediaItems, setMediaItems] = useState([]);
+  const emptyMedia = {
+    id: null,
+    media_type: "image",
+    title: "",
+    caption: "",
+    url: "",
+    sort_order: "0",
+  };
+  const [mediaForm, setMediaForm] = useState(emptyMedia);
   const [reviewForm, setReviewForm] = useState({
     trainer_id: "",
     client_name: "",
@@ -115,7 +124,7 @@ export default function AdminDashboard() {
 
   async function loadAll() {
     try {
-      const [p, c, t, ct, sch, g, o] = await Promise.all([
+      const [p, c, t, ct, sch, g, o, m] = await Promise.all([
         api("/api/admin/payments"),
         api("/api/admin/classes"),
         api("/api/admin/trainers"),
@@ -123,6 +132,7 @@ export default function AdminDashboard() {
         api("/api/admin/schedules"),
         api("/api/admin/google"),
         api("/api/admin/outlets"),
+        api("/api/admin/media"),
       ]);
       setPayments(p);
       setClasses(c);
@@ -131,6 +141,7 @@ export default function AdminDashboard() {
       setScheduleData(sch);
       setGoogleSettings(g);
       setOutlets(o);
+      setMediaItems(m);
     } catch (err) {
       setError(err.message);
       if (String(err.message).includes("sign in")) {
@@ -171,6 +182,27 @@ export default function AdminDashboard() {
     body.append("image", file);
     const data = await api("/api/admin/upload", { method: "POST", body });
     setter({ ...form, image_url: data.image_url });
+  }
+
+  async function uploadMediaFile(file) {
+    const body = new FormData();
+    body.append("file", file);
+    const data = await api("/api/admin/upload-media", { method: "POST", body });
+    setMediaForm((prev) => ({ ...prev, url: data.url }));
+  }
+
+  async function saveMedia(e) {
+    e.preventDefault();
+    setError("");
+    const path = mediaForm.id
+      ? `/api/admin/media/${mediaForm.id}`
+      : "/api/admin/media";
+    await api(path, {
+      method: mediaForm.id ? "PUT" : "POST",
+      body: JSON.stringify(mediaForm),
+    });
+    setMediaForm(emptyMedia);
+    loadAll();
   }
 
   async function saveClass(e) {
@@ -385,6 +417,16 @@ export default function AdminDashboard() {
           }}
         >
           Teachers
+        </a>
+        <a
+          href="#media"
+          className={tab === "media" ? "active" : ""}
+          onClick={(e) => {
+            e.preventDefault();
+            setTab("media");
+          }}
+        >
+          Photos & videos
         </a>
         <a
           href="#outlets"
@@ -1177,6 +1219,145 @@ export default function AdminDashboard() {
                             await api(`/api/admin/schedules/${row.id}`, {
                               method: "DELETE",
                             });
+                            loadAll();
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {tab === "media" && (
+          <>
+            <h1 className="serif">
+              {mediaForm.id ? "Edit photo or video" : "Add yoga photo or video"}
+            </h1>
+            <form className="admin-form" onSubmit={saveMedia}>
+              <label>
+                Type
+                <select
+                  value={mediaForm.media_type}
+                  onChange={(e) =>
+                    setMediaForm({ ...mediaForm, media_type: e.target.value })
+                  }
+                >
+                  <option value="image">Image</option>
+                  <option value="video">Video</option>
+                </select>
+              </label>
+              <label>
+                Title
+                <input
+                  value={mediaForm.title}
+                  onChange={(e) =>
+                    setMediaForm({ ...mediaForm, title: e.target.value })
+                  }
+                  required
+                />
+              </label>
+              <label className="full">
+                Caption
+                <input
+                  value={mediaForm.caption}
+                  onChange={(e) =>
+                    setMediaForm({ ...mediaForm, caption: e.target.value })
+                  }
+                />
+              </label>
+              <label className="full">
+                Image / video file
+                <input
+                  type="file"
+                  accept={
+                    mediaForm.media_type === "video"
+                      ? "video/mp4,video/webm,video/*"
+                      : "image/*"
+                  }
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) uploadMediaFile(file);
+                  }}
+                />
+              </label>
+              <label className="full">
+                Or paste URL (Unsplash, YouTube, or uploaded file path)
+                <input
+                  value={mediaForm.url}
+                  onChange={(e) =>
+                    setMediaForm({ ...mediaForm, url: e.target.value })
+                  }
+                  placeholder="https://... or /uploads/..."
+                  required
+                />
+              </label>
+              <div className="full" style={{ display: "flex", gap: 10 }}>
+                <button className="btn btn-green" type="submit">
+                  {mediaForm.id ? "Update media" : "Add media"}
+                </button>
+                {mediaForm.id ? (
+                  <button
+                    className="btn btn-outline"
+                    type="button"
+                    onClick={() => setMediaForm(emptyMedia)}
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            </form>
+            <table className="table" style={{ marginTop: 28 }}>
+              <thead>
+                <tr>
+                  <th>Preview</th>
+                  <th>Title</th>
+                  <th>Type</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {mediaItems.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      {item.media_type === "image" ? (
+                        <img
+                          src={imageSrc(item.url)}
+                          alt={item.title}
+                          style={{ width: 88, height: 64, objectFit: "cover", borderRadius: 8 }}
+                        />
+                      ) : (
+                        <span className="badge paid">Video</span>
+                      )}
+                    </td>
+                    <td>
+                      {item.title}
+                      <br />
+                      <span className="muted">{item.caption}</span>
+                    </td>
+                    <td>{item.media_type}</td>
+                    <td>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => setMediaForm({ ...item, sort_order: String(item.sort_order || 0) })}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={async () => {
+                            if (!window.confirm(`Delete ${item.title}?`)) return;
+                            await api(`/api/admin/media/${item.id}`, {
+                              method: "DELETE",
+                            });
+                            if (mediaForm.id === item.id) setMediaForm(emptyMedia);
                             loadAll();
                           }}
                         >

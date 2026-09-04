@@ -4,6 +4,7 @@ import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import WeeklySchedule from "../components/WeeklySchedule";
 import ReviewForm from "../components/ReviewForm";
+import MediaGrid from "../components/MediaGrid";
 import { api, money, imageSrc } from "../api";
 
 export default function Home() {
@@ -13,6 +14,7 @@ export default function Home() {
     outlets: [],
     schedules: [],
     trainers: [],
+    media: [],
     google_review_url: null,
   });
   const [studioId, setStudioId] = useState("");
@@ -88,6 +90,23 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {(data.media || []).length > 0 ? (
+        <section className="section alt" id="media">
+          <div className="container">
+            <div className="section-head">
+              <div>
+                <p className="muted">Studio life</p>
+                <h2>Yoga photos and videos</h2>
+              </div>
+              <Link className="btn btn-outline" to="/gallery">
+                View gallery
+              </Link>
+            </div>
+            <MediaGrid items={data.media} />
+          </div>
+        </section>
+      ) : null}
 
       <section className="section alt" id="schedule">
         <div className="container">
