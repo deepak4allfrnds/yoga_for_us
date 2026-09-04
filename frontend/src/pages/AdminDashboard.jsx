@@ -123,31 +123,36 @@ export default function AdminDashboard() {
   }, [isAdmin, navigate]);
 
   async function loadAll() {
-    try {
-      const [p, c, t, ct, sch, g, o, m] = await Promise.all([
-        api("/api/admin/payments"),
-        api("/api/admin/classes"),
-        api("/api/admin/trainers"),
-        api("/api/admin/contacts"),
-        api("/api/admin/schedules"),
-        api("/api/admin/google"),
-        api("/api/admin/outlets"),
-        api("/api/admin/media"),
-      ]);
-      setPayments(p);
-      setClasses(c);
-      setTrainersData(t);
-      setContacts(ct);
-      setScheduleData(sch);
-      setGoogleSettings(g);
-      setOutlets(o);
-      setMediaItems(m);
-    } catch (err) {
-      setError(err.message);
-      if (String(err.message).includes("sign in")) {
-        localStorage.removeItem("yoga_admin_token");
-        navigate("/admin");
-      }
+    const results = await Promise.allSettled([
+      api("/api/admin/payments"),
+      api("/api/admin/classes"),
+      api("/api/admin/trainers"),
+      api("/api/admin/contacts"),
+      api("/api/admin/schedules"),
+      api("/api/admin/google"),
+      api("/api/admin/outlets"),
+      api("/api/admin/media"),
+    ]);
+    const [p, c, t, ct, sch, g, o, m] = results;
+    const failed = results.find((r) => r.status === "rejected");
+    if (failed) setError(failed.reason?.message || "Could not load some admin data");
+    else setError("");
+    if (p.status === "fulfilled") setPayments(p.value);
+    if (c.status === "fulfilled") setClasses(c.value);
+    if (t.status === "fulfilled") setTrainersData(t.value);
+    if (ct.status === "fulfilled") setContacts(ct.value);
+    if (sch.status === "fulfilled") setScheduleData(sch.value);
+    if (g.status === "fulfilled") setGoogleSettings(g.value);
+    if (o.status === "fulfilled") setOutlets(o.value);
+    if (m.status === "fulfilled") setMediaItems(m.value);
+    const authFail = results.find(
+      (r) =>
+        r.status === "rejected" &&
+        String(r.reason?.message || "").includes("sign in")
+    );
+    if (authFail) {
+      localStorage.removeItem("yoga_admin_token");
+      navigate("/admin");
     }
   }
 
@@ -158,7 +163,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!weekPlan.outlet_id || !weekPlan.class_id) return;
     const next = emptyWeekDays();
-    scheduleData.schedules
+    (scheduleData.schedules || [])
       .filter(
         (s) =>
           String(s.outlet_id) === String(weekPlan.outlet_id) &&
@@ -444,6 +449,7 @@ export default function AdminDashboard() {
           onClick={(e) => {
             e.preventDefault();
             setTab("schedules");
+            loadAll();
           }}
         >
           Studio schedule
@@ -905,7 +911,7 @@ export default function AdminDashboard() {
                   required
                 >
                   <option value="">Select studio</option>
-                  {scheduleData.outlets.map((o) => (
+                  {(scheduleData.outlets || []).map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name} — {o.address}
                     </option>
@@ -922,7 +928,7 @@ export default function AdminDashboard() {
                   required
                 >
                   <option value="">Select class</option>
-                  {scheduleData.classes.map((c) => (
+                  {(scheduleData.classes || []).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.title}
                     </option>
@@ -950,7 +956,7 @@ export default function AdminDashboard() {
                   }
                 >
                   <option value="">Apply to Mon–Fri</option>
-                  {scheduleData.trainers.map((t) => (
+                  {(scheduleData.trainers || []).map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>
@@ -1011,7 +1017,7 @@ export default function AdminDashboard() {
                               }
                             >
                               <option value="">Select teacher</option>
-                              {scheduleData.trainers.map((t) => (
+                              {(scheduleData.trainers || []).map((t) => (
                                 <option key={t.id} value={t.id}>
                                   {t.name}
                                 </option>
@@ -1045,7 +1051,7 @@ export default function AdminDashboard() {
                   required
                 >
                   <option value="">Select studio</option>
-                  {scheduleData.outlets.map((o) => (
+                  {(scheduleData.outlets || []).map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name} — {o.address}
                     </option>
@@ -1065,7 +1071,7 @@ export default function AdminDashboard() {
                   required
                 >
                   <option value="">Select class</option>
-                  {scheduleData.classes.map((c) => (
+                  {(scheduleData.classes || []).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.title}
                     </option>
@@ -1084,7 +1090,7 @@ export default function AdminDashboard() {
                   }
                 >
                   <option value="">Select teacher</option>
-                  {scheduleData.trainers.map((t) => (
+                  {(scheduleData.trainers || []).map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
                     </option>
@@ -1175,7 +1181,7 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {scheduleData.schedules.map((row) => (
+                {(scheduleData.schedules || []).map((row) => (
                   <tr key={row.id}>
                     <td>
                       {row.outlet_name}
@@ -1661,7 +1667,7 @@ export default function AdminDashboard() {
                 </div>
                 <AttendanceCalendar
                   viewOnly
-                  slots={scheduleData.schedules.filter(
+                  slots={(scheduleData.schedules || []).filter(
                     (row) =>
                       row.mode === "studio" &&
                       String(row.outlet_id) ===

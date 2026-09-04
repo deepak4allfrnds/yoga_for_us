@@ -29,10 +29,13 @@ export async function api(path, options = {}) {
       headers.Authorization = `Bearer ${token()}`;
     }
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || "Request failed");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error(data.error || "Not found. Restart the API so new admin routes are loaded.");
     }
+    throw new Error(data.error || "Request failed");
+  }
     return data;
   } finally {
     pending = Math.max(0, pending - 1);

@@ -1011,6 +1011,7 @@ app.get("/api/admin/contacts", requireAdmin, async (_req, res) => {
 
 app.get("/api/admin/schedules", requireAdmin, async (_req, res) => {
   try {
+    await ensureScheduleTables();
     const [schedules, outlets, classes, trainers] = await Promise.all([
       db.query(
         `SELECT s.*, t.name AS trainer_name, c.title AS class_title,
