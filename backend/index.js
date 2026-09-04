@@ -714,6 +714,40 @@ app.post("/api/user/choose-class", requireAuth, async (req, res) => {
 
 app.get("/api/user/enrollments", requireAuth, async (req, res) => {
   try {
+    await db.query(`
+      ALTER TABLE class_enrollments ADD COLUMN IF NOT EXISTS starts_at DATE;
+      ALTER TABLE class_enrollments ADD COLUMN IF NOT EXISTS ends_at DATE;
+      ALTER TABLE class_enrollments ADD COLUMN IF NOT EXISTS payment_id INTEGER;
+      ALTER TABLE class_enrollments ADD COLUMN IF NOT EXISTS payment_status VARCHAR(40) DEFAULT 'unpaid';
+    `);
+    await db.query(
+      `UPDATE class_enrollments e
+       SET payment_status = 'paid',
+           starts_at = COALESCE(e.starts_at, CURRENT_DATE),
+           ends_at = COALESCE(e.ends_at, (CURRENT_DATE + INTERVAL '8 weeks')::date)
+       WHERE e.user_id = $1
+         AND (
+           e.payment_status = 'paid'
+           OR e.payment_id IS NOT NULL
+           OR EXISTS (
+             SELECT 1 FROM payments p
+             WHERE p.user_id = e.user_id
+               AND p.class_id = e.class_id
+               AND p.status = 'paid'
+           )
+         )`,
+      [req.user.id]
+    );
+    const { fulfillPaidPayment } = require("./migrate-studio");
+    const paidRows = await db.query(
+      `SELECT * FROM payments
+       WHERE user_id = $1 AND status = 'paid' AND class_id IS NOT NULL
+         AND COALESCE(kind, 'class') = 'class'`,
+      [req.user.id]
+    );
+    for (const row of paidRows.rows) {
+      await fulfillPaidPayment({ ...row, kind: "class" });
+    }
     const result = await db.query(
       `SELECT e.*, c.title AS class_title, o.name AS outlet_name
        FROM class_enrollments e
@@ -749,13 +783,42 @@ app.post("/api/user/attendance", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Class and date are required" });
   }
   try {
+    const paid = await db.query(
+      `SELECT e.*
+       FROM class_enrollments e
+       WHERE e.user_id = $1 AND e.class_id = $2
+         AND (
+           e.payment_status = 'paid'
+           OR e.payment_id IS NOT NULL
+           OR EXISTS (
+             SELECT 1 FROM payments p
+             WHERE p.user_id = e.user_id AND p.class_id = e.class_id AND p.status = 'paid'
+           )
+         )
+       ORDER BY e.created_at DESC
+       LIMIT 1`,
+      [req.user.id, class_id]
+    );
+    const enroll = paid.rows[0];
+    if (!enroll) {
+      return res.status(403).json({ error: "Pay for this course before marking attendance" });
+    }
+    const start = String(enroll.starts_at || new Date().toISOString()).slice(0, 10);
+    const end = String(enroll.ends_at || start).slice(0, 10);
+    if (session_date < start || session_date > end) {
+      return res.status(400).json({ error: `Attendance is only for ${start} to ${end}` });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (session_date < today) {
+      return res.status(400).json({ error: "Past dates cannot be marked" });
+    }
     const result = await db.query(
       `INSERT INTO attendance (user_id, class_id, outlet_id, session_date, present)
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (user_id, class_id, session_date) DO UPDATE
        SET present = EXCLUDED.present, outlet_id = EXCLUDED.outlet_id
        RETURNING *`,
-      [req.user.id, class_id, outlet_id || null, session_date, present !== false]
+      [req.user.id, class_id, outlet_id || enroll.outlet_id || null, session_date, present !== false]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {

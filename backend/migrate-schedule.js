@@ -26,6 +26,11 @@ async function ensureScheduleTables() {
       UNIQUE (user_id, class_id, mode)
     );
 
+    ALTER TABLE class_enrollments ADD COLUMN IF NOT EXISTS starts_at DATE;
+    ALTER TABLE class_enrollments ADD COLUMN IF NOT EXISTS ends_at DATE;
+    ALTER TABLE class_enrollments ADD COLUMN IF NOT EXISTS payment_id INTEGER;
+    ALTER TABLE class_enrollments ADD COLUMN IF NOT EXISTS payment_status VARCHAR(40) DEFAULT 'unpaid';
+
     CREATE TABLE IF NOT EXISTS attendance (
       id SERIAL PRIMARY KEY,
       user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,

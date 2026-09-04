@@ -6,12 +6,11 @@ import { useAuth } from "../AuthContext";
 
 export default function Login() {
   const navigate = useNavigate();
-  const [params] = useSearchParams();
   const { setSession } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  async function submit(e) {
+async function submit(e) {
     e.preventDefault();
     setError("");
     try {
@@ -20,12 +19,7 @@ export default function Login() {
         body: JSON.stringify({ email, password }),
       });
       setSession(data.token, data.user);
-      const next = params.get("next");
-      if (next && next.startsWith("/")) {
-        navigate(next);
-      } else {
-        navigate(data.user.role === "admin" ? "/admin/dashboard" : "/dashboard");
-      }
+      navigate(data.user.role === "admin" ? "/admin/dashboard" : "/");
     } catch (e) {
       setError(e.message);
     }

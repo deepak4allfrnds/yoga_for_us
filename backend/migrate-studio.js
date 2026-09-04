@@ -198,20 +198,38 @@ async function fulfillPaidPayment(payment) {
       [payment.id, ref]
     );
   }
-  if (kind === "class" && payment.class_id && payment.user_id) {
+  if (kind === "class" && payment.class_id) {
+    let userId = payment.user_id;
+    if (!userId && payment.email) {
+      const found = await db.query("SELECT id FROM users WHERE lower(email) = lower($1)", [
+        payment.email,
+      ]);
+      userId = found.rows[0]?.id || null;
+    }
+    if (!userId) return;
+    const course = await db.query("SELECT duration FROM classes WHERE id = $1", [payment.class_id]);
+    const weeksMatch = String(course.rows[0]?.duration || "").match(/(\d+)\s*week/i);
+    const weeks = weeksMatch ? Number(weeksMatch[1]) : 8;
     const chunk = () => Math.random().toString(36).replace(/[^a-z]/g, "").slice(0, 3);
     const meet = `https://meet.google.com/${chunk()}-${chunk()}${chunk().slice(0, 1)}-${chunk()}`;
     await db.query(
-      `INSERT INTO class_enrollments (user_id, class_id, outlet_id, mode, meet_link)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO class_enrollments
+         (user_id, class_id, outlet_id, mode, meet_link, starts_at, ends_at, payment_id, payment_status)
+       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, (CURRENT_DATE + ($6::int * INTERVAL '1 week'))::date, $7, 'paid')
        ON CONFLICT (user_id, class_id, mode) DO UPDATE
-       SET meet_link = COALESCE(class_enrollments.meet_link, EXCLUDED.meet_link)`,
+       SET meet_link = COALESCE(class_enrollments.meet_link, EXCLUDED.meet_link),
+           starts_at = COALESCE(class_enrollments.starts_at, EXCLUDED.starts_at),
+           ends_at = EXCLUDED.ends_at,
+           payment_id = EXCLUDED.payment_id,
+           payment_status = 'paid'`,
       [
-        payment.user_id,
+        userId,
         payment.class_id,
         payment.outlet_id || null,
         payment.mode === "studio" ? "studio" : "online",
         meet,
+        weeks,
+        payment.id,
       ]
     );
   }

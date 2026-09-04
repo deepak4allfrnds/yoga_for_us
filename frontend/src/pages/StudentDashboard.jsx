@@ -3,11 +3,20 @@ import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import WeeklySchedule from "../components/WeeklySchedule";
-import { api, money } from "../api";
+import { api, money, imageSrc } from "../api";
 import { DAYS } from "../scheduleUtils";
 
 function dayName(id) {
   return DAYS.find((d) => d.id === Number(id))?.label || `Day ${id}`;
+}
+
+function dateLabel(value) {
+  if (!value) return "—";
+  return String(value).slice(0, 10);
+}
+
+function coursePath(course) {
+  return `/courses/${course.class_id}?mode=${encodeURIComponent(course.mode || "studio")}`;
 }
 
 export default function StudentDashboard() {
@@ -20,6 +29,11 @@ export default function StudentDashboard() {
       .catch((err) => setError(err.message));
   }, []);
 
+  const paidCourses = useMemo(
+    () => (data?.enrollments || []).filter((e) => e.payment_status === "paid" || e.payment_id),
+    [data]
+  );
+  const chosenCourse = paidCourses[0] || data?.enrollments?.[0] || null;
   const onlineSlots = useMemo(
     () => (data?.upcoming || []).filter((s) => s.mode === "online"),
     [data]
@@ -49,14 +63,26 @@ export default function StudentDashboard() {
             <p className="muted">Loading…</p>
           ) : (
             <>
+              {(data.reminders || []).length > 0 ? (
+                <div className="notice" style={{ marginBottom: 28 }}>
+                  <strong>Due payment & reminders</strong>
+                  <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                    {(data.reminders || []).map((r, i) => (
+                      <li key={`${r.type}-${i}`}>
+                        {r.text}{" "}
+                        <Link to={r.href}>Pay / view</Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
               <div className="grid-3 dash-grid">
                 <article className="card">
                   <div className="card-body">
                     <p className="muted">Membership expiry</p>
                     <h3 className="serif" style={{ marginTop: 0 }}>
-                      {m?.expires_at
-                        ? String(m.expires_at).slice(0, 10)
-                        : "No active plan"}
+                      {m?.expires_at ? dateLabel(m.expires_at) : "No active plan"}
                     </h3>
                     <p>{m?.plan_name || "Choose a membership to unlock live classes."}</p>
                     <Link className="btn btn-green" to="/membership">
@@ -92,15 +118,64 @@ export default function StudentDashboard() {
                     <p>
                       {(data.attendance || []).filter((a) => a.present).length} sessions marked
                     </p>
-                    <Link className="btn btn-outline" to="/">
-                      Mark via class calendar
-                    </Link>
+                    {chosenCourse ? (
+                      <Link className="btn btn-outline" to={coursePath(chosenCourse)}>
+                        Mark via class calendar
+                      </Link>
+                    ) : (
+                      <Link className="btn btn-outline" to="/">
+                        Choose a course first
+                      </Link>
+                    )}
                     <p className="muted" style={{ marginTop: 12 }}>
-                      Or scan the studio QR code, then login.
+                      Opens the course you paid for so you can mark that class only.
                     </p>
                   </div>
                 </article>
               </div>
+
+              <div className="section-head" style={{ marginTop: 40 }}>
+                <div>
+                  <p className="muted">After payment</p>
+                  <h2>Your selected yoga courses</h2>
+                </div>
+              </div>
+              {paidCourses.length === 0 && !(data.enrollments || []).length ? (
+                <p className="muted">
+                  Pay for a course to see start and end dates here.{" "}
+                  <Link to="/">Browse courses</Link>
+                </p>
+              ) : (
+                <div className="grid-3">
+                  {(paidCourses.length ? paidCourses : data.enrollments).map((e) => (
+                    <article className="card" key={e.id}>
+                      {e.class_image ? (
+                        <img className="cover" src={imageSrc(e.class_image)} alt={e.class_title} />
+                      ) : null}
+                      <div className="card-body">
+                        <h3 className="serif" style={{ marginTop: 0 }}>
+                          {e.class_title}
+                        </h3>
+                        <p className="muted">
+                          {e.mode === "online" ? "Online class" : "Studio class"}
+                          {e.outlet_name ? ` · ${e.outlet_name}` : ""}
+                        </p>
+                        <p>
+                          <strong>Start:</strong> {dateLabel(e.starts_at)}
+                          <br />
+                          <strong>End:</strong> {dateLabel(e.ends_at)}
+                        </p>
+                        <p className="muted">
+                          {e.payment_status === "paid" ? "Payment complete" : "Payment pending"}
+                        </p>
+                        <Link className="btn btn-green" to={coursePath(e)}>
+                          Mark attendance
+                        </Link>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
 
               <div className="section-head" style={{ marginTop: 40 }}>
                 <div>
@@ -140,7 +215,7 @@ export default function StudentDashboard() {
                 <tbody>
                   {(data.attendance || []).map((a) => (
                     <tr key={a.id}>
-                      <td>{String(a.session_date).slice(0, 10)}</td>
+                      <td>{dateLabel(a.session_date)}</td>
                       <td>{a.class_title}</td>
                       <td>{a.present ? "Yes" : "No"}</td>
                     </tr>
@@ -151,7 +226,7 @@ export default function StudentDashboard() {
               <h2>Payments</h2>
               {(data.payments || []).map((p) => (
                 <p key={p.id} className="muted">
-                  {p.kind} · {money(p.amount)} · {p.status}
+                  {p.class_title || p.kind} · {money(p.amount)} · {p.status}
                 </p>
               ))}
               <Link to="/payments/history">Full payment history</Link>

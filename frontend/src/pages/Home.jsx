@@ -51,6 +51,17 @@ function MemberHome() {
                 Dashboard
                 {present ? <span>{present} classes attended</span> : null}
               </Link>
+              {dash?.enrollments?.[0] ? (
+                <Link
+                  className="member-chip"
+                  to={`/courses/${dash.enrollments[0].class_id}?mode=${encodeURIComponent(
+                    dash.enrollments[0].mode || "studio"
+                  )}`}
+                >
+                  Mark attendance
+                  <span>{dash.enrollments[0].class_title}</span>
+                </Link>
+              ) : null}
               <Link className="member-chip" to="/membership">
                 Membership
               </Link>

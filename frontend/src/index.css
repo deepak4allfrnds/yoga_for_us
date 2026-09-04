@@ -803,14 +803,30 @@ select {
 
 .cal-cell.scheduled {
   border-color: var(--green);
+  background: #f3faf6;
 }
 
-.cal-cell.present {
-  background: var(--green-soft);
+.cal-cell.present,
+.cal-cell.present:disabled {
+  background: #1f6b4a;
+  color: #fff;
+  border-color: #154d35;
+  opacity: 1;
+  font-weight: 700;
 }
 
-.cal-cell.absent {
-  background: #ffecea;
+.cal-cell.absent,
+.cal-cell.absent:disabled {
+  background: #c23b2e;
+  color: #fff;
+  border-color: #8f241b;
+  opacity: 1;
+  font-weight: 700;
+}
+
+.cal-cell small {
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .attendance-calendar-panel {

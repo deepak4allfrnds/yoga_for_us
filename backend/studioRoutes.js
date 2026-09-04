@@ -214,6 +214,17 @@ function registerStudioRoutes(app) {
     try {
       await ensureStudioTables();
       const userId = req.user.id;
+      const paidClasses = await db.query(
+        `SELECT * FROM payments
+         WHERE (user_id = $1 OR lower(email) = lower($2))
+           AND status = 'paid'
+           AND class_id IS NOT NULL
+           AND COALESCE(kind, 'class') = 'class'`,
+        [userId, req.user.email]
+      );
+      for (const row of paidClasses.rows) {
+        await fulfillPaidPayment({ ...row, kind: "class", user_id: row.user_id || userId });
+      }
       const [memberships, attendance, enrollments, privateRows, workshops, schedules, settings, payments] =
         await Promise.all([
           db.query(
@@ -234,11 +245,13 @@ function registerStudioRoutes(app) {
             [userId]
           ),
           db.query(
-            `SELECT e.*, c.title AS class_title, o.name AS outlet_name
+            `SELECT e.*, c.title AS class_title, c.image_url AS class_image, c.duration AS class_duration,
+                    o.name AS outlet_name
              FROM class_enrollments e
              LEFT JOIN classes c ON c.id = e.class_id
              LEFT JOIN outlets o ON o.id = e.outlet_id
-             WHERE e.user_id = $1`,
+             WHERE e.user_id = $1
+             ORDER BY e.created_at DESC`,
             [userId]
           ),
           db.query(
@@ -264,9 +277,11 @@ function registerStudioRoutes(app) {
           ),
           getSettings(),
           db.query(
-            `SELECT id, amount, status, kind, created_at FROM payments
-             WHERE user_id = $1 OR lower(email) = lower($2)
-             ORDER BY created_at DESC LIMIT 12`,
+            `SELECT p.id, p.amount, p.status, p.kind, p.created_at, p.class_id, c.title AS class_title
+             FROM payments p
+             LEFT JOIN classes c ON c.id = p.class_id
+             WHERE p.user_id = $1 OR lower(p.email) = lower($2)
+             ORDER BY p.created_at DESC LIMIT 20`,
             [userId, req.user.email]
           ),
         ]);
@@ -288,6 +303,48 @@ function registerStudioRoutes(app) {
 
       const settingsRow = settings;
       const wa = settingsRow?.whatsapp || "";
+      const dayMs = 86400000;
+      const daysLeft = (value) => {
+        if (!value) return null;
+        return Math.ceil((new Date(value) - new Date()) / dayMs);
+      };
+      const duePayments = payments.rows.filter(
+        (p) => p.status === "pending" || p.status === "failed"
+      );
+      const reminders = [];
+      duePayments.forEach((p) => {
+        reminders.push({
+          type: "payment",
+          text: `Payment due${p.class_title ? ` for ${p.class_title}` : ""} · ${p.status} · ₹${Number(p.amount || 0)}`,
+          href: p.class_id ? `/courses/${p.class_id}/pay` : "/payments/history",
+        });
+      });
+      enrollments.rows.forEach((e) => {
+        const left = daysLeft(e.ends_at);
+        if (left != null && left <= 7) {
+          reminders.push({
+            type: "course",
+            text:
+              left < 0
+                ? `${e.class_title} ended. Renew to continue attendance.`
+                : `${e.class_title} ends in ${left} day${left === 1 ? "" : "s"}.`,
+            href: `/courses/${e.class_id}?mode=${e.mode || "studio"}`,
+          });
+        }
+      });
+      if (active?.expires_at) {
+        const left = daysLeft(active.expires_at);
+        if (left != null && left <= 14) {
+          reminders.push({
+            type: "membership",
+            text:
+              left < 0
+                ? "Membership expired. Renew to keep access."
+                : `Membership due for renewal in ${left} day${left === 1 ? "" : "s"}.`,
+            href: "/membership",
+          });
+        }
+      }
 
       res.json({
         memberships: memberships.rows,
@@ -298,6 +355,8 @@ function registerStudioRoutes(app) {
         workshops: workshops.rows,
         upcoming: upcoming,
         payments: payments.rows,
+        due_payments: duePayments,
+        reminders,
         meet_link: onlineAccess || paidOnline ? meet : null,
         whatsapp_url: wa
           ? waLink(wa, "Hi Yoga For Us, I have a question about my membership.")

@@ -7,19 +7,51 @@ export default function AttendanceCalendar({
   onToggle,
   disabled,
   viewOnly = false,
+  startDate,
+  endDate,
 }) {
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const windowStart = startDate ? new Date(`${startDate}T00:00:00`) : null;
+  const windowEnd = endDate ? new Date(`${endDate}T00:00:00`) : null;
+  const initial = windowStart && windowStart > today ? windowStart : today;
   const [cursor, setCursor] = useState(
-    new Date(today.getFullYear(), today.getMonth(), 1)
+    new Date(initial.getFullYear(), initial.getMonth(), 1)
   );
   const cells = useMemo(
     () => monthCells(cursor.getFullYear(), cursor.getMonth()),
     [cursor]
   );
-  const scheduledDays = new Set(slots.map((s) => Number(s.day_of_week)));
+  const scheduledDays = new Set(
+    slots.map((s) => Number(s.day_of_week)).filter((n) => n >= 1 && n <= 7)
+  );
+  const [localMarks, setLocalMarks] = useState({});
   const byDate = Object.fromEntries(
     records.map((r) => [String(r.session_date).slice(0, 10), r])
   );
+
+  function recordFor(key) {
+    return localMarks[key] || byDate[key] || null;
+  }
+
+  function inPaidWindow(date) {
+    if (windowStart && date < windowStart) return false;
+    if (windowEnd && date > windowEnd) return false;
+    return true;
+  }
+
+  function isClassDay(date) {
+    if (!inPaidWindow(date)) return false;
+    if (scheduledDays.size === 0) return true;
+    return scheduledDays.has(weekdayIso(date));
+  }
+
+  const minMonth = windowStart
+    ? new Date(windowStart.getFullYear(), windowStart.getMonth(), 1)
+    : null;
+  const maxMonth = windowEnd
+    ? new Date(windowEnd.getFullYear(), windowEnd.getMonth(), 1)
+    : null;
 
   return (
     <div>
@@ -27,6 +59,7 @@ export default function AttendanceCalendar({
         <button
           type="button"
           className="btn btn-outline"
+          disabled={minMonth && cursor <= minMonth}
           onClick={() =>
             setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))
           }
@@ -39,6 +72,7 @@ export default function AttendanceCalendar({
         <button
           type="button"
           className="btn btn-outline"
+          disabled={maxMonth && cursor >= maxMonth}
           onClick={() =>
             setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))
           }
@@ -55,17 +89,22 @@ export default function AttendanceCalendar({
         {cells.map((date, i) => {
           if (!date) return <div key={`e-${i}`} className="cal-cell empty" />;
           const key = isoDate(date);
-          const scheduled = scheduledDays.has(weekdayIso(date));
-          const rec = byDate[key];
+          const inWindow = inPaidWindow(date);
+          const scheduled = isClassDay(date);
+          const rec = inWindow ? recordFor(key) : null;
+          const past = date < today;
+          const isPresent = rec?.present === true;
+          const isAbsent = rec && rec.present === false;
           const cls = [
             "cal-cell",
             scheduled ? "scheduled" : "",
-            rec?.present ? "present" : "",
-            rec && rec.present === false ? "absent" : "",
+            !inWindow ? "empty" : "",
+            isPresent ? "present" : "",
+            isAbsent ? "absent" : "",
           ]
             .filter(Boolean)
             .join(" ");
-          const canToggle = !viewOnly && !disabled && scheduled;
+          const canToggle = !viewOnly && !disabled && scheduled && !past;
           return (
             <button
               key={key}
@@ -74,13 +113,18 @@ export default function AttendanceCalendar({
               disabled={viewOnly ? !rec : !canToggle}
               onClick={() => {
                 if (!canToggle || !onToggle) return;
-                onToggle(key, !(rec && rec.present));
+                const nextPresent = !isPresent;
+                setLocalMarks((prev) => ({
+                  ...prev,
+                  [key]: { session_date: key, present: nextPresent },
+                }));
+                onToggle(key, nextPresent);
               }}
             >
               <span>{date.getDate()}</span>
-              {rec?.present ? <small>Present</small> : null}
-              {rec && rec.present === false ? <small>Absent</small> : null}
-              {!viewOnly && scheduled && !rec ? <small>Mark</small> : null}
+              {inWindow && isPresent ? <small>Present</small> : null}
+              {inWindow && isAbsent ? <small>Absent</small> : null}
+              {canToggle && !rec ? <small>Mark</small> : null}
             </button>
           );
         })}
@@ -88,7 +132,9 @@ export default function AttendanceCalendar({
       <p className="muted">
         {viewOnly
           ? "Green is present. Red is absent. Use Prev/Next to see other months."
-          : "Green days are class days. Click a class day to mark attendance."}
+          : startDate && endDate
+            ? `Mark attendance from ${startDate} to ${endDate} (due date). Past days stay closed.`
+            : "Green days are class days. Click a class day to mark attendance."}
       </p>
     </div>
   );
