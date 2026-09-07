@@ -9,7 +9,7 @@ export function SocialLinks({ settings, className = "social-row" }) {
         }
       : null,
     settings.instagram_url
-      ? { href: settings.instagram_url, label: "Instagram", icon: "ig" }
+      ? { href: "https://www.instagram.com/yoga_for_us_?igsi=MWpncWg0bm9wN3Zmaw%3D%3D&utm_source=qr", label: "Instagram", icon: "ig" }
       : null,
     settings.facebook_url
       ? { href: settings.facebook_url, label: "Facebook", icon: "fb" }
