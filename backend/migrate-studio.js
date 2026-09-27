@@ -32,6 +32,15 @@ async function ensureStudioTables() {
       default_meet_link TEXT
     );
     ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS default_meet_link TEXT;
+    ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS paytm_qr_url TEXT;
+    ALTER TABLE site_settings ADD COLUMN IF NOT EXISTS paytm_upi_id VARCHAR(120);
+
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS upi_ref VARCHAR(120);
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS qr_submitted_at TIMESTAMP;
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP;
+
+    -- Which listings a class appears in: studio (offline), online, home (home visit).
+    ALTER TABLE classes ADD COLUMN IF NOT EXISTS categories TEXT[];
 
     CREATE TABLE IF NOT EXISTS membership_plans (
       id SERIAL PRIMARY KEY,
@@ -72,6 +81,7 @@ async function ensureStudioTables() {
     ALTER TABLE private_bookings ADD COLUMN IF NOT EXISTS address TEXT;
     ALTER TABLE private_bookings ADD COLUMN IF NOT EXISTS outlet_id INTEGER REFERENCES outlets(id) ON DELETE SET NULL;
     ALTER TABLE private_bookings ADD COLUMN IF NOT EXISTS admin_note TEXT;
+    ALTER TABLE private_bookings ADD COLUMN IF NOT EXISTS class_id INTEGER REFERENCES classes(id) ON DELETE SET NULL;
 
     CREATE TABLE IF NOT EXISTS app_seeds (
       key VARCHAR(255) PRIMARY KEY,
@@ -142,6 +152,15 @@ async function ensureStudioTables() {
     }
     await db.query("INSERT INTO app_seeds (key) VALUES ($1) ON CONFLICT DO NOTHING", [key]);
   }
+
+  // Give existing classes a category once; afterwards admins control it.
+  await db.query(
+    `UPDATE classes SET categories = ARRAY['home'] WHERE categories IS NULL AND title = $1`,
+    [HOME_VISIT_CLASS_TITLE]
+  );
+  await db.query(
+    `UPDATE classes SET categories = ARRAY['studio','online'] WHERE categories IS NULL`
+  );
 
   const plans = await db.query("SELECT COUNT(*)::int AS n FROM membership_plans");
   if (plans.rows[0].n === 0) {

@@ -39,6 +39,16 @@ export default function Checkout() {
     if (kind === "private") {
       const home = params.get("type") === "home";
       setTitle(home ? "Private home visit yoga" : "Private yoga session");
+      const classId = params.get("class_id");
+      if (classId) {
+        api(`/api/public/classes/${classId}`)
+          .then((d) => {
+            setTitle(`${d.course.title} · home visit`);
+            setAmount(d.course.price);
+          })
+          .catch(() => {});
+        return;
+      }
       api("/api/public/private-pricing")
         .then((d) => {
           const row = home ? d.home : d.private;

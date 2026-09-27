@@ -7,15 +7,26 @@ import { api, money } from "../api";
 export default function Membership() {
   const [plans, setPlans] = useState([]);
   const [outlets, setOutlets] = useState([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    api("/api/public/memberships").then((d) => setPlans(d.plans || [])).catch(console.error);
+    api("/api/public/memberships")
+      .then((d) => setPlans(d.plans || []))
+      .catch(console.error)
+      .finally(() => setLoaded(true));
     api("/api/public/contact").then((d) => setOutlets(d.outlets || [])).catch(console.error);
   }, []);
 
   const online = plans.filter((p) => p.access_type === "online");
   const offline = plans.filter((p) => p.access_type === "offline");
   const both = plans.filter((p) => p.access_type === "both");
+
+  // Only list access types the admin has actually added plans for.
+  const groups = [
+    { title: "Online-only", list: online },
+    { title: "Studio / offline only", list: offline },
+    { title: "Studio + online", list: both },
+  ].filter((g) => g.list.length > 0);
 
   function Group({ title, list }) {
     return (
@@ -50,17 +61,25 @@ export default function Membership() {
           <h1 className="serif" style={{ fontSize: 48, color: "var(--green-dark)" }}>
             Membership plans
           </h1>
-          <p>
-            Choose 3 months, 6 months, or 1 year. Online-only, or studio plus online.
-            Access starts automatically after payment.
-          </p>
+          {groups.length ? (
+            <p>
+              Available plans: {groups.map((g) => g.title).join(" · ")}. Access
+              starts automatically after payment.
+            </p>
+          ) : null}
         </div>
       </section>
       <section className="section">
         <div className="container">
-          <Group title="Online-only" list={online} />
-          <Group title="Studio / offline only" list={offline} />
-          <Group title="Studio + online" list={both} />
+          {groups.map((g) => (
+            <Group key={g.title} title={g.title} list={g.list} />
+          ))}
+          {loaded && !groups.length ? (
+            <p className="muted">
+              Membership plans will be available soon. Please contact the studio
+              for current offers.
+            </p>
+          ) : null}
         </div>
       </section>
       <Footer outlets={outlets} />

@@ -5,7 +5,9 @@ import Footer from "../components/Footer";
 import WeeklySchedule from "../components/WeeklySchedule";
 import ReviewForm from "../components/ReviewForm";
 import MediaGrid from "../components/MediaGrid";
-import { api, money, imageSrc } from "../api";
+import ClassCard from "../components/ClassCard";
+import { CLASS_CATEGORIES, classCategories } from "../classCategories";
+import { api } from "../api";
 import { useAuth } from "../AuthContext";
 
 function MemberHome() {
@@ -100,6 +102,7 @@ export default function Home() {
     google_review_url: null,
   });
   const [studioId, setStudioId] = useState("");
+  const [category, setCategory] = useState("all");
 
   useEffect(() => {
     api("/api/public/home")
@@ -109,6 +112,14 @@ export default function Home() {
       })
       .catch(console.error);
   }, []);
+
+  const visibleClasses = useMemo(
+    () =>
+      category === "all"
+        ? data.classes
+        : data.classes.filter((c) => classCategories(c).includes(category)),
+    [data.classes, category]
+  );
 
   const studioSlots = useMemo(
     () =>
@@ -149,48 +160,29 @@ export default function Home() {
               <h2>All yoga courses</h2>
             </div>
           </div>
-          <div className="grid-3">
-            {data.classes.map((c) => (
-              <article className="card" key={c.id}>
-                {c.image_url ? (
-                  <img className="cover" src={imageSrc(c.image_url)} alt={c.title} />
-                ) : null}
-                <div className="card-body">
-                  <h3 className="serif" style={{ fontSize: 26, margin: "0 0 8px" }}>
-                    {c.title}
-                  </h3>
-                  <p className="muted">{c.description}</p>
-                  <p className="muted">{c.duration}</p>
-                  <Link
-                    className="btn btn-green price-btn"
-                    to={`/courses/${c.id}`}
-                  >
-                    {money(c.price)}
-                  </Link>
-                  <div className="mode-row">
-                    {c.title === "Personal/Private Yoga" ? (
-                      <Link className="btn btn-green" to="/private">
-                        Book private session
-                      </Link>
-                    ) : c.title === "Private Home Visit Yoga" ? (
-                      <Link className="btn btn-green" to="/home-visit">
-                        Book home visit
-                      </Link>
-                    ) : (
-                      <>
-                        <Link className="btn btn-outline" to={`/courses/${c.id}?mode=studio`}>
-                          Studio offline
-                        </Link>
-                        <Link className="btn btn-outline" to={`/courses/${c.id}?mode=online`}>
-                          Online class
-                        </Link>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </article>
+          <div className="filter-row" role="tablist" aria-label="Class category">
+            {[{ id: "all", label: "All" }, ...CLASS_CATEGORIES].map((k) => (
+              <button
+                key={k.id}
+                type="button"
+                role="tab"
+                aria-selected={category === k.id}
+                className={`btn ${category === k.id ? "btn-green" : "btn-outline"}`}
+                onClick={() => setCategory(k.id)}
+              >
+                {k.label}
+              </button>
             ))}
           </div>
+          {visibleClasses.length ? (
+            <div className="grid-3">
+              {visibleClasses.map((c) => (
+                <ClassCard key={c.id} course={c} />
+              ))}
+            </div>
+          ) : (
+            <p className="muted">No classes in this category yet.</p>
+          )}
         </div>
       </section>
 

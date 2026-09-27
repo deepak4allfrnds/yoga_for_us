@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, money } from "../api";
+import { api, money, imageSrc } from "../api";
 
 const LABELS = { paytm: "Paytm", cashfree: "Cashfree" };
 
@@ -61,15 +61,74 @@ async function openPaytm(order) {
 export default function PaymentButtons({ getBody, amount, email }) {
   const navigate = useNavigate();
   const [gateways, setGateways] = useState(["paytm"]);
+  const [paytmQr, setPaytmQr] = useState(null);
   const [pending, setPending] = useState(null);
+  const [qrOrder, setQrOrder] = useState(null);
+  const [upiRef, setUpiRef] = useState("");
+  const [waiting, setWaiting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     api("/api/payments/gateways")
-      .then((d) => setGateways(d.gateways?.length ? d.gateways : ["paytm"]))
+      .then((d) => {
+        setGateways(d.gateways?.length ? d.gateways : ["paytm"]);
+        setPaytmQr(d.paytm_qr || null);
+      })
       .catch(() => {});
   }, []);
+
+  // After "I have paid", poll until the admin approves (or rejects) the payment.
+  useEffect(() => {
+    if (!waiting || !qrOrder) return undefined;
+    let stopped = false;
+    async function check() {
+      try {
+        const res = await api(`/api/payments/status/${encodeURIComponent(qrOrder.order_id)}`);
+        if (stopped) return;
+        if (res.paid) {
+          setWaiting(false);
+          navigate("/dashboard");
+        } else if (res.status === "failed") {
+          setWaiting(false);
+          setError(
+            "The studio could not confirm this payment. Please contact us on WhatsApp with your transaction ID."
+          );
+        }
+      } catch {
+        // keep polling; a network blip should not end the wait
+      }
+    }
+    check();
+    const timer = setInterval(check, 5000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [waiting, qrOrder, navigate]);
+
+  async function startQr() {
+    const order = await api("/api/payments/paytm-qr/order", {
+      method: "POST",
+      body: JSON.stringify(getBody()),
+    });
+    if (email) sessionStorage.setItem("yoga_pay_email", email.trim().toLowerCase());
+    setQrOrder(order);
+    setUpiRef("");
+  }
+
+  async function submitQr() {
+    setError("");
+    try {
+      await api("/api/payments/paytm-qr/submit", {
+        method: "POST",
+        body: JSON.stringify({ order_id: qrOrder.order_id, upi_ref: upiRef }),
+      });
+      setWaiting(true);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   async function verify(gateway, order) {
     const result = await api(`/api/payments/${gateway}/verify`, {
@@ -87,8 +146,14 @@ export default function PaymentButtons({ getBody, amount, email }) {
   async function pay(gateway) {
     setError("");
     setPending(null);
+    setQrOrder(null);
+    setWaiting(false);
     setBusy(true);
     try {
+      if (gateway === "paytm" && paytmQr) {
+        await startQr();
+        return;
+      }
       const order = await api(`/api/payments/${gateway}/order`, {
         method: "POST",
         body: JSON.stringify(getBody()),
@@ -139,13 +204,58 @@ export default function PaymentButtons({ getBody, amount, email }) {
           key={g}
           type="button"
           className={`btn ${i === 0 ? "btn-green" : "btn-outline"}`}
-          disabled={busy}
+          disabled={busy || waiting}
           onClick={submitWith(g)}
         >
           {amount != null ? `Pay ${money(amount)} with ${LABELS[g]}` : `Pay with ${LABELS[g]}`}
         </button>
       ))}
       {error ? <p className="error">{error}</p> : null}
+      {qrOrder ? (
+        <div className="qr-pay">
+          <p>
+            <strong>Scan with Paytm or any UPI app</strong>
+          </p>
+          <img
+            className="qr-pay-image"
+            src={imageSrc(qrOrder.qr_image)}
+            alt="Paytm payment QR code"
+          />
+          <p className="price">{money(qrOrder.amount)}</p>
+          <p className="muted">
+            {qrOrder.class_title} · Order {qrOrder.order_id}
+            {qrOrder.upi_id ? (
+              <>
+                <br />
+                UPI ID: <strong>{qrOrder.upi_id}</strong>
+              </>
+            ) : null}
+          </p>
+          {waiting ? (
+            <p className="notice" role="status">
+              Thank you! Waiting for the studio to confirm your payment. This page
+              opens your dashboard automatically once it is approved.
+            </p>
+          ) : (
+            <>
+              <label>
+                UPI / Paytm transaction ID (optional)
+                <input
+                  value={upiRef}
+                  onChange={(e) => setUpiRef(e.target.value)}
+                  placeholder="e.g. 4123 5678 9012"
+                />
+              </label>
+              <p className="muted">
+                Pay exactly {money(qrOrder.amount)}, then tap the button below.
+              </p>
+              <button type="button" className="btn btn-green" onClick={submitQr}>
+                I have paid
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
       {pending ? (
         <div className="cf-test-box">
           <p>

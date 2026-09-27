@@ -71,15 +71,22 @@ async function resolveOrderItem(body) {
     const booking = await db.query("SELECT * FROM private_bookings WHERE id = $1", [body.ref_id]);
     if (!booking.rows[0]) throw Object.assign(new Error("Private booking not found"), { status: 404 });
     const isHome = booking.rows[0].session_type === "home";
-    const title = isHome ? HOME_VISIT_CLASS_TITLE : PRIVATE_CLASS_TITLE;
-    const klass = await db.query("SELECT * FROM classes WHERE title = $1 LIMIT 1", [title]);
+    // A booking made from a class listing is priced from that class.
+    let klass = booking.rows[0].class_id
+      ? await db.query("SELECT * FROM classes WHERE id = $1", [booking.rows[0].class_id])
+      : { rows: [] };
+    if (!klass.rows[0]) {
+      const title = isHome ? HOME_VISIT_CLASS_TITLE : PRIVATE_CLASS_TITLE;
+      klass = await db.query("SELECT * FROM classes WHERE title = $1 LIMIT 1", [title]);
+    }
     const price = Number(klass.rows[0]?.price || (isHome ? 3499 : 2499));
+    const title = klass.rows[0]?.title || (isHome ? HOME_VISIT_CLASS_TITLE : PRIVATE_CLASS_TITLE);
     return {
       kind,
       ref_id: booking.rows[0].id,
       class_id: klass.rows[0]?.id || null,
       amount: Math.max(price, 1),
-      title,
+      title: isHome ? `${title} · home visit` : title,
     };
   }
   if (!body.class_id) {
@@ -167,6 +174,23 @@ function registerStudioRoutes(app) {
     }
   });
 
+  app.get("/api/public/classes", async (req, res) => {
+    const category = String(req.query.category || "");
+    try {
+      await ensureStudioTables();
+      const result = category
+        ? await db.query(
+            "SELECT * FROM classes WHERE $1 = ANY(categories) ORDER BY id",
+            [category]
+          )
+        : await db.query("SELECT * FROM classes ORDER BY id");
+      res.json({ classes: result.rows });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Could not load classes" });
+    }
+  });
+
   app.get("/api/public/private-pricing", async (_req, res) => {
     try {
       await ensureStudioTables();
@@ -183,7 +207,7 @@ function registerStudioRoutes(app) {
   });
 
   app.post("/api/public/private-bookings", optionalAuth, async (req, res) => {
-    const { student_name, email, phone, preferred_date, preferred_time, notes, address, outlet_id } =
+    const { student_name, email, phone, preferred_date, preferred_time, notes, address, outlet_id, class_id } =
       req.body;
     const session_type = PRIVATE_SESSION_TYPES.includes(req.body.session_type)
       ? req.body.session_type
@@ -199,8 +223,8 @@ function registerStudioRoutes(app) {
       const row = await db.query(
         `INSERT INTO private_bookings
            (user_id, student_name, email, phone, preferred_date, preferred_time, notes,
-            session_type, address, outlet_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            session_type, address, outlet_id, class_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING *`,
         [
           req.user?.id || null,
@@ -213,6 +237,7 @@ function registerStudioRoutes(app) {
           session_type,
           session_type === "home" ? String(address).trim() : null,
           session_type === "studio" ? outlet_id || null : null,
+          class_id || null,
         ]
       );
       res.status(201).json(row.rows[0]);
@@ -289,9 +314,10 @@ function registerStudioRoutes(app) {
             [userId]
           ),
           db.query(
-            `SELECT b.*, o.name AS outlet_name
+            `SELECT b.*, o.name AS outlet_name, c.title AS class_title
              FROM private_bookings b
              LEFT JOIN outlets o ON o.id = b.outlet_id
+             LEFT JOIN classes c ON c.id = b.class_id
              WHERE b.user_id = $1 OR lower(b.email) = lower($2)
              ORDER BY b.preferred_date DESC`,
             [userId, req.user.email]
@@ -454,10 +480,11 @@ function registerStudioRoutes(app) {
           getSettings(),
           db.query("SELECT * FROM free_trials ORDER BY created_at DESC LIMIT 80"),
           db.query(
-            `SELECT b.*, o.name AS outlet_name, u.name AS account_name
+            `SELECT b.*, o.name AS outlet_name, u.name AS account_name, c.title AS class_title
              FROM private_bookings b
              LEFT JOIN outlets o ON o.id = b.outlet_id
              LEFT JOIN users u ON u.id = b.user_id
+             LEFT JOIN classes c ON c.id = b.class_id
              ORDER BY b.created_at DESC LIMIT 200`
           ),
           db.query("SELECT * FROM workshops ORDER BY id DESC"),
@@ -508,6 +535,8 @@ function registerStudioRoutes(app) {
       maps_embed_url,
       maps_link,
       default_meet_link,
+      paytm_qr_url,
+      paytm_upi_id,
     } = req.body;
     try {
       await ensureStudioTables();
@@ -516,8 +545,9 @@ function registerStudioRoutes(app) {
       if (!existing) {
         row = await db.query(
           `INSERT INTO site_settings
-             (whatsapp, instagram_url, facebook_url, youtube_url, maps_embed_url, maps_link, default_meet_link)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+             (whatsapp, instagram_url, facebook_url, youtube_url, maps_embed_url, maps_link, default_meet_link,
+              paytm_qr_url, paytm_upi_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
           [
             whatsapp || null,
             instagram_url || null,
@@ -526,14 +556,17 @@ function registerStudioRoutes(app) {
             maps_embed_url || null,
             maps_link || null,
             default_meet_link || null,
+            paytm_qr_url || null,
+            paytm_upi_id || null,
           ]
         );
       } else {
         row = await db.query(
           `UPDATE site_settings SET
              whatsapp = $1, instagram_url = $2, facebook_url = $3, youtube_url = $4,
-             maps_embed_url = $5, maps_link = $6, default_meet_link = $7
-           WHERE id = $8 RETURNING *`,
+             maps_embed_url = $5, maps_link = $6, default_meet_link = $7,
+             paytm_qr_url = $8, paytm_upi_id = $9
+           WHERE id = $10 RETURNING *`,
           [
             whatsapp || null,
             instagram_url || null,
@@ -542,6 +575,8 @@ function registerStudioRoutes(app) {
             maps_embed_url || null,
             maps_link || null,
             default_meet_link || null,
+            paytm_qr_url || null,
+            paytm_upi_id || null,
             existing.id,
           ]
         );

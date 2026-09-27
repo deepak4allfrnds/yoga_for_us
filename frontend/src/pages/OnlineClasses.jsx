@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import WeeklySchedule from "../components/WeeklySchedule";
+import ClassCard from "../components/ClassCard";
+import { classCategories } from "../classCategories";
 import { api } from "../api";
 
 export default function OnlineClasses() {
@@ -19,6 +21,11 @@ export default function OnlineClasses() {
       })
       .catch(console.error);
   }, []);
+
+  const onlineClasses = useMemo(
+    () => (data.classes || []).filter((c) => classCategories(c).includes("online")),
+    [data.classes]
+  );
 
   const online = useMemo(
     () => (data.schedules || []).filter((s) => s.mode === "online"),
@@ -48,6 +55,23 @@ export default function OnlineClasses() {
           </div>
         </div>
       </section>
+      {onlineClasses.length ? (
+        <section className="section alt">
+          <div className="container">
+            <div className="section-head">
+              <div>
+                <p className="muted">Available online</p>
+                <h2>Online yoga courses</h2>
+              </div>
+            </div>
+            <div className="grid-3">
+              {onlineClasses.map((c) => (
+                <ClassCard key={c.id} course={c} />
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
       <section className="section">
         <div className="container">
           <WeeklySchedule title="Live class timetable" slots={online} />

@@ -532,16 +532,106 @@ async function settlePayment(paymentId, status, gatewayPaymentId, gateway) {
   return detail.rows[0];
 }
 
-app.get("/api/payments/gateways", (_req, res) => {
+app.get("/api/payments/gateways", async (_req, res) => {
   const list = String(process.env.PAYMENT_GATEWAYS || "paytm,cashfree")
     .split(",")
     .map((g) => g.trim().toLowerCase())
     .filter((g) => ["paytm", "cashfree"].includes(g));
+  let settings = null;
+  try {
+    await ensureStudioTables();
+    settings = await getSettings();
+  } catch (err) {
+    console.error(err);
+  }
   res.json({
     gateways: list.length ? list : ["paytm"],
+    // When the admin has uploaded a Paytm QR, "Pay with Paytm" shows that QR
+    // and the payment is confirmed manually by the admin.
+    paytm_qr: settings?.paytm_qr_url
+      ? { image_url: settings.paytm_qr_url, upi_id: settings.paytm_upi_id || "" }
+      : null,
     paytm_test: useTestPaytm(),
     cashfree_test: useTestSdk(),
   });
+});
+
+// --- Paytm QR (scan & pay, approved by the admin) ---
+
+app.post("/api/payments/paytm-qr/order", optionalAuth, async (req, res) => {
+  try {
+    const settings = await getSettings();
+    if (!settings?.paytm_qr_url) {
+      return res.status(400).json({ error: "Paytm QR payments are not set up yet" });
+    }
+    const { row, item } = await createPendingPayment(req, "paytm_qr");
+    const orderId = `QR${row.id}${crypto.randomBytes(4).toString("hex").toUpperCase()}`;
+    await db.query("UPDATE payments SET cf_order_id = $1 WHERE id = $2", [orderId, row.id]);
+    res.status(201).json({
+      gateway: "paytm_qr",
+      payment_id: row.id,
+      order_id: orderId,
+      amount: item.amount,
+      class_title: item.title,
+      qr_image: settings.paytm_qr_url,
+      upi_id: settings.paytm_upi_id || "",
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(err.status || 500).json({ error: err.message || "Could not start Paytm QR payment" });
+  }
+});
+
+app.post("/api/payments/paytm-qr/submit", async (req, res) => {
+  const { order_id, upi_ref } = req.body;
+  if (!order_id) return res.status(400).json({ error: "Order id is required" });
+  try {
+    const result = await db.query(
+      `UPDATE payments
+       SET upi_ref = COALESCE(NULLIF($1, ''), upi_ref), qr_submitted_at = NOW()
+       WHERE cf_order_id = $2 AND payment_method = 'paytm_qr' AND status = 'pending'
+       RETURNING id, status`,
+      [String(upi_ref || "").trim().slice(0, 120), order_id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Pending QR payment not found" });
+    res.json({ ok: true, status: result.rows[0].status });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not submit payment" });
+  }
+});
+
+// Polled by the checkout page while the admin confirms a QR payment.
+app.get("/api/payments/status/:orderId", async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT status, kind, payment_method FROM payments WHERE cf_order_id = $1",
+      [req.params.orderId]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Payment not found" });
+    res.json({ status: result.rows[0].status, paid: result.rows[0].status === "paid" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load payment status" });
+  }
+});
+
+app.put("/api/admin/payments/:id/status", requireAdmin, async (req, res) => {
+  const { status } = req.body;
+  if (!["paid", "failed"].includes(status)) {
+    return res.status(400).json({ error: "Status must be paid or failed" });
+  }
+  try {
+    const found = await db.query("SELECT * FROM payments WHERE id = $1", [req.params.id]);
+    const row = found.rows[0];
+    if (!row) return res.status(404).json({ error: "Payment not found" });
+    const payment = await settlePayment(row.id, status, row.upi_ref, row.payment_method || "paytm_qr");
+    await db.query("UPDATE payments SET reviewed_at = NOW() WHERE id = $1", [row.id]);
+    res.json(payment);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not update payment" });
+  }
 });
 
 app.post("/api/payments/cashfree/order", optionalAuth, async (req, res) => {
@@ -1077,14 +1167,28 @@ app.get("/api/admin/classes", requireAdmin, async (_req, res) => {
   }
 });
 
+const CLASS_CATEGORIES = ["studio", "online", "home"];
+
+function cleanCategories(value) {
+  const list = (Array.isArray(value) ? value : [])
+    .map((c) => String(c).toLowerCase())
+    .filter((c) => CLASS_CATEGORIES.includes(c));
+  return [...new Set(list)];
+}
+
 app.post("/api/admin/classes", requireAdmin, async (req, res) => {
   const { title, description, price, duration, image_url } = req.body;
   if (!title) return res.status(400).json({ error: "Title is required" });
+  const categories = cleanCategories(req.body.categories);
+  if (!categories.length) {
+    return res.status(400).json({ error: "Choose at least one category: studio, online, or home visit" });
+  }
   try {
+    await ensureStudioTables();
     const result = await db.query(
-      `INSERT INTO classes (title, description, price, duration, image_url)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [title, description || "", price || 0, duration || "", image_url || ""]
+      `INSERT INTO classes (title, description, price, duration, image_url, categories)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [title, description || "", price || 0, duration || "", image_url || "", categories]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -1095,12 +1199,17 @@ app.post("/api/admin/classes", requireAdmin, async (req, res) => {
 
 app.put("/api/admin/classes/:id", requireAdmin, async (req, res) => {
   const { title, description, price, duration, image_url } = req.body;
+  const categories = cleanCategories(req.body.categories);
+  if (!categories.length) {
+    return res.status(400).json({ error: "Choose at least one category: studio, online, or home visit" });
+  }
   try {
+    await ensureStudioTables();
     const result = await db.query(
       `UPDATE classes
-       SET title = $1, description = $2, price = $3, duration = $4, image_url = $5
-       WHERE id = $6 RETURNING *`,
-      [title, description, price, duration, image_url, req.params.id]
+       SET title = $1, description = $2, price = $3, duration = $4, image_url = $5, categories = $6
+       WHERE id = $7 RETURNING *`,
+      [title, description, price, duration, image_url, categories, req.params.id]
     );
     res.json(result.rows[0]);
   } catch (err) {

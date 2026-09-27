@@ -642,6 +642,94 @@ select {
   box-shadow: 0 0 0 2px var(--green) inset;
 }
 
+.qr-pay {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 16px;
+  border: 1px dashed var(--green);
+  border-radius: 14px;
+  background: var(--green-soft);
+}
+
+.qr-pay label {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+
+.qr-pay-image {
+  width: 240px;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: white;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  padding: 8px;
+}
+
+.side-count {
+  display: inline-block;
+  min-width: 22px;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f4b400;
+  color: #1d1d1d;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.category-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+.category-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.category-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+
+.home-class {
+  display: block;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.home-class .card-body {
+  display: grid;
+  gap: 6px;
+}
+
+.home-class.is-active {
+  outline: 3px solid var(--green);
+}
+
+.google-share {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  margin-top: 16px;
+}
+
 .pay-buttons {
   display: grid;
   gap: 10px;

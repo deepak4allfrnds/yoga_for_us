@@ -25,6 +25,16 @@ const ADMIN_TABS = [
   "qr",
 ];
 
+const CATEGORY_OPTIONS = [
+  ["studio", "Studio (offline)"],
+  ["online", "Online"],
+  ["home", "Home visit"],
+];
+
+function categoryLabel(id) {
+  return CATEGORY_OPTIONS.find(([key]) => key === id)?.[1] || id;
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -82,6 +92,7 @@ export default function AdminDashboard() {
     price: "",
     duration: "",
     image_url: "",
+    categories: ["studio", "online"],
   };
   const emptyTrainer = {
     id: null,
@@ -191,6 +202,15 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  // Keep the payments list fresh so new Paytm QR payments show up for approval.
+  useEffect(() => {
+    if (tab !== "payments") return undefined;
+    const timer = setInterval(() => {
+      api("/api/admin/payments").then(setPayments).catch(() => {});
+    }, 20000);
+    return () => clearInterval(timer);
+  }, [tab]);
 
   useEffect(() => {
     if (tab === "schedules") {
@@ -456,6 +476,29 @@ export default function AdminDashboard() {
     }
   }
 
+  async function setPaymentStatus(payment, status) {
+    const verb = status === "paid" ? "Approve" : "Reject";
+    if (!window.confirm(`${verb} ${money(payment.amount)} from ${payment.student_name}?`)) return;
+    setError("");
+    try {
+      await api(`/api/admin/payments/${payment.id}/status`, {
+        method: "PUT",
+        body: JSON.stringify({ status }),
+      });
+      await loadAll();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function toggleClassCategory(id) {
+    const current = classForm.categories || [];
+    setClassForm({
+      ...classForm,
+      categories: current.includes(id) ? current.filter((c) => c !== id) : [...current, id],
+    });
+  }
+
   async function toggleReviewFeatured(review) {
     setError("");
     try {
@@ -475,6 +518,9 @@ export default function AdminDashboard() {
   }
 
   const s = payments.summary || {};
+  const awaitingQr = (payments.payments || []).filter(
+    (p) => p.payment_method === "paytm_qr" && p.status === "pending"
+  );
   const userQuery = userSearch.trim().toLowerCase();
   const filteredUsers = users.filter(
     (u) =>
@@ -513,6 +559,11 @@ export default function AdminDashboard() {
             onClick={() => setTab(id)}
           >
             {label}
+            {id === "payments" && awaitingQr.length ? (
+              <span className="side-count" aria-label={`${awaitingQr.length} awaiting approval`}>
+                {awaitingQr.length}
+              </span>
+            ) : null}
           </button>
         ))}
         <NavLink to="/">View website</NavLink>
@@ -525,6 +576,76 @@ export default function AdminDashboard() {
 
         {tab === "payments" && (
           <>
+            <h1 className="serif">Awaiting approval (Paytm QR)</h1>
+            {awaitingQr.length === 0 ? (
+              <p className="muted">
+                No QR payments waiting. When a student pays by scanning your Paytm QR,
+                it appears here. Check your Paytm app, then approve it to unlock
+                their class or membership.
+              </p>
+            ) : (
+              <div className="table-scroll">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Submitted</th>
+                      <th>Student</th>
+                      <th>For</th>
+                      <th>Amount</th>
+                      <th>Transaction ID</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {awaitingQr.map((p) => (
+                      <tr key={p.id}>
+                        <td>
+                          {new Date(p.qr_submitted_at || p.created_at).toLocaleString()}
+                          {!p.qr_submitted_at ? (
+                            <>
+                              <br />
+                              <span className="muted">Not marked as paid yet</span>
+                            </>
+                          ) : null}
+                        </td>
+                        <td>
+                          {p.student_name}
+                          <br />
+                          <span className="muted">
+                            {p.email}
+                            {p.phone ? ` · ${p.phone}` : ""}
+                          </span>
+                        </td>
+                        <td>{p.class_title || p.kind}</td>
+                        <td>
+                          <strong>{money(p.amount)}</strong>
+                        </td>
+                        <td>{p.upi_ref || "—"}</td>
+                        <td>
+                          <div className="row-actions">
+                            <button
+                              type="button"
+                              className="btn btn-green"
+                              onClick={() => setPaymentStatus(p, "paid")}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline"
+                              onClick={() => setPaymentStatus(p, "failed")}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             <h1 className="serif">Payment transaction summary</h1>
             <div className="stats">
               <div className="stat">
@@ -585,7 +706,15 @@ export default function AdminDashboard() {
                       ) : null}
                     </td>
                     <td>{money(p.amount)}</td>
-                    <td>{p.payment_method}</td>
+                    <td>
+                      {p.payment_method === "paytm_qr" ? "Paytm QR" : p.payment_method}
+                      {p.upi_ref ? (
+                        <>
+                          <br />
+                          <span className="muted">{p.upi_ref}</span>
+                        </>
+                      ) : null}
+                    </td>
                     <td>
                       <span className={`badge ${p.status}`}>{p.status}</span>
                     </td>
@@ -643,6 +772,19 @@ export default function AdminDashboard() {
                   }
                 />
               </label>
+              <fieldset className="full category-picker">
+                <legend>Category (where this class is listed)</legend>
+                {CATEGORY_OPTIONS.map(([id, label]) => (
+                  <label key={id}>
+                    <input
+                      type="checkbox"
+                      checked={(classForm.categories || []).includes(id)}
+                      onChange={() => toggleClassCategory(id)}
+                    />{" "}
+                    {label}
+                  </label>
+                ))}
+              </fieldset>
               <label className="full">
                 Description
                 <textarea
@@ -676,11 +818,20 @@ export default function AdminDashboard() {
                     <h3>{c.title}</h3>
                     <p>{c.description}</p>
                     <p className="price">{money(c.price)}</p>
+                    <p className="category-tags">
+                      {(c.categories || []).map((cat) => (
+                        <span key={cat} className="badge paid">
+                          {categoryLabel(cat)}
+                        </span>
+                      ))}
+                    </p>
                     <div className="mode-row">
                       <button
                         className="btn btn-green"
                         type="button"
-                        onClick={() => setClassForm({ ...c })}
+                        onClick={() =>
+                          setClassForm({ ...c, categories: c.categories || ["studio", "online"] })
+                        }
                       >
                         Edit
                       </button>

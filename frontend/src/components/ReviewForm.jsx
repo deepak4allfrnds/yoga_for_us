@@ -10,6 +10,7 @@ export default function ReviewForm({ onCreated, googleReviewUrl }) {
   });
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [posted, setPosted] = useState(null);
 
   function update(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -25,6 +26,7 @@ export default function ReviewForm({ onCreated, googleReviewUrl }) {
         body: JSON.stringify(form),
       });
       setNotice("Thank you. Your review is now on the website.");
+      setPosted({ comment: form.comment, rating: Number(form.rating) });
       setForm({
         client_name: "",
         rating: 5,
@@ -78,6 +80,29 @@ export default function ReviewForm({ onCreated, googleReviewUrl }) {
         {error ? <p className="error">{error}</p> : null}
         {notice ? <p className="notice">{notice}</p> : null}
       </form>
+      {posted && googleReviewUrl ? (
+        <div className="notice google-share">
+          <p>
+            <strong>Share it on Google too?</strong> Google only accepts reviews
+            posted from your own Google account. We copy your text, open our
+            Google page, and you just paste it and pick {posted.rating} stars.
+          </p>
+          <button
+            type="button"
+            className="btn btn-green"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(posted.comment);
+              } catch {
+                // Clipboard can be blocked; the Google page still opens.
+              }
+              window.open(googleReviewUrl, "_blank", "noopener");
+            }}
+          >
+            Copy review &amp; post on Google
+          </button>
+        </div>
+      ) : null}
       {googleReviewUrl ? (
         <p>
           Or leave a Google review. After you post it, we pull it onto this

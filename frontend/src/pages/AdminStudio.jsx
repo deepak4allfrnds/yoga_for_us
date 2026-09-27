@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, money } from "../api";
+import { api, money, imageSrc } from "../api";
 
 const emptyPlan = {
   id: null,
@@ -67,6 +67,18 @@ export default function AdminStudio({ tab, classes, outlets }) {
         body: JSON.stringify(settings),
       });
       await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function uploadQr(file) {
+    setError("");
+    try {
+      const body = new FormData();
+      body.append("image", file);
+      const data = await api("/api/admin/upload", { method: "POST", body });
+      setSettings((prev) => ({ ...prev, paytm_qr_url: data.image_url }));
     } catch (err) {
       setError(err.message);
     }
@@ -219,6 +231,45 @@ export default function AdminStudio({ tab, classes, outlets }) {
               <input
                 value={settings.default_meet_link || ""}
                 onChange={(e) => setSettings({ ...settings, default_meet_link: e.target.value })}
+              />
+            </label>
+            <h2 className="serif" style={{ marginBottom: 0 }}>
+              Paytm QR payments
+            </h2>
+            <p className="muted">
+              When a QR is uploaded, &quot;Pay with Paytm&quot; shows this QR to the
+              student. Approve each payment under Payments → Awaiting approval.
+            </p>
+            <label>
+              Paytm / UPI QR image
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => e.target.files?.[0] && uploadQr(e.target.files[0])}
+              />
+            </label>
+            {settings.paytm_qr_url ? (
+              <div>
+                <img
+                  src={imageSrc(settings.paytm_qr_url)}
+                  alt="Current Paytm QR"
+                  className="qr-pay-image"
+                />
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setSettings({ ...settings, paytm_qr_url: "" })}
+                >
+                  Remove QR
+                </button>
+              </div>
+            ) : null}
+            <label>
+              UPI ID shown under the QR (optional)
+              <input
+                value={settings.paytm_upi_id || ""}
+                onChange={(e) => setSettings({ ...settings, paytm_upi_id: e.target.value })}
+                placeholder="yogaforus@paytm"
               />
             </label>
             <button className="btn btn-green" type="submit">

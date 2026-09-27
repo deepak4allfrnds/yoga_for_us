@@ -6,13 +6,14 @@ import WeeklySchedule from "../components/WeeklySchedule";
 import AttendanceCalendar from "../components/AttendanceCalendar";
 import { api, money, imageSrc } from "../api";
 import { useAuth } from "../AuthContext";
+import { classCategories } from "../classCategories";
 
 export default function CourseDetail() {
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const mode = params.get("mode") || "studio";
+  const requestedMode = params.get("mode") || "studio";
   const [data, setData] = useState({
     course: null,
     outlets: [],
@@ -34,6 +35,12 @@ export default function CourseDetail() {
       })
       .catch((err) => setError(err.message));
   }, [id]);
+
+  const course = data.course;
+  // Only offer the modes this class is listed under (studio / online / home visit).
+  const categories = course ? classCategories(course) : ["studio", "online"];
+  const modes = categories.filter((c) => c === "studio" || c === "online");
+  const mode = modes.includes(requestedMode) ? requestedMode : modes[0] || "";
 
   useEffect(() => {
     if (!user || !id) return;
@@ -87,8 +94,6 @@ export default function CourseDetail() {
   const endDate = enrollment?.ends_at
     ? String(enrollment.ends_at).slice(0, 10)
     : "";
-
-  const course = data.course;
 
   function setMode(next) {
     setNotice("");
@@ -198,24 +203,37 @@ export default function CourseDetail() {
                   <p className="price">{money(course.price)}</p>
                   <p>Choose how you want to take this class:</p>
                   <div className="mode-row">
-                    <button
-                      type="button"
-                      className={`btn ${mode === "studio" ? "btn-green" : "btn-outline"}`}
-                      onClick={() => setMode("studio")}
-                    >
-                      Studio offline class
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn ${mode === "online" ? "btn-green" : "btn-outline"}`}
-                      onClick={() => setMode("online")}
-                    >
-                      Online class
-                    </button>
+                    {modes.includes("studio") ? (
+                      <button
+                        type="button"
+                        className={`btn ${mode === "studio" ? "btn-green" : "btn-outline"}`}
+                        onClick={() => setMode("studio")}
+                      >
+                        Studio offline class
+                      </button>
+                    ) : null}
+                    {modes.includes("online") ? (
+                      <button
+                        type="button"
+                        className={`btn ${mode === "online" ? "btn-green" : "btn-outline"}`}
+                        onClick={() => setMode("online")}
+                      >
+                        Online class
+                      </button>
+                    ) : null}
+                    {categories.includes("home") ? (
+                      <Link className="btn btn-outline" to={`/home-visit?class_id=${course.id}`}>
+                        Home visit
+                      </Link>
+                    ) : null}
                   </div>
                   {course.title === "Personal/Private Yoga" ? (
                     <Link className="btn btn-green" to="/private">
                       Pick date & time, then pay
+                    </Link>
+                  ) : !mode ? (
+                    <Link className="btn btn-green" to={`/home-visit?class_id=${course.id}`}>
+                      Book a home visit
                     </Link>
                   ) : (
                     <Link
