@@ -42,10 +42,22 @@ async function ensureScheduleTables() {
     );
   `);
 
+  // Seed the demo timetable only once, and only for studios/classes/teachers that
+  // still exist. Re-seeding with hard-coded ids after an admin deleted classes (or
+  // cleared the timetable) broke deploys with a weekly_schedules_class_id_fkey error.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS app_seeds (
+      key VARCHAR(255) PRIMARY KEY,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  const seeded = await pool.query("SELECT 1 FROM app_seeds WHERE key = 'schedule:demo'");
   const existing = await pool.query("SELECT COUNT(*)::int AS n FROM weekly_schedules");
-  if (existing.rows[0].n === 0) {
+  if (!seeded.rows[0] && existing.rows[0].n === 0) {
     await pool.query(`
-      INSERT INTO weekly_schedules (outlet_id, class_id, trainer_id, day_of_week, start_time, end_time, mode) VALUES
+      INSERT INTO weekly_schedules (outlet_id, class_id, trainer_id, day_of_week, start_time, end_time, mode)
+      SELECT v.outlet_id, v.class_id, t.id, v.day_of_week, v.start_time, v.end_time, v.mode
+      FROM (VALUES
       (1, 1, 1, 1, '06:30', '07:30', 'studio'),
       (1, 1, 1, 2, '06:30', '07:30', 'studio'),
       (1, 1, 1, 3, '06:30', '07:30', 'studio'),
@@ -79,8 +91,13 @@ async function ensureScheduleTables() {
       (1, 5, 2, 5, '18:30', '19:30', 'online'),
       (1, 1, 1, 6, '08:00', '09:00', 'online'),
       (1, 6, 4, 7, '08:00', '08:45', 'online')
+      ) AS v (outlet_id, class_id, trainer_id, day_of_week, start_time, end_time, mode)
+      JOIN outlets o ON o.id = v.outlet_id
+      JOIN classes c ON c.id = v.class_id
+      LEFT JOIN trainers t ON t.id = v.trainer_id
     `);
   }
+  await pool.query("INSERT INTO app_seeds (key) VALUES ('schedule:demo') ON CONFLICT DO NOTHING");
 }
 
 async function migrate() {

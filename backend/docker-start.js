@@ -66,8 +66,9 @@ waitForDatabase()
     run("migrate-reviews.js");
     run("migrate-payments.js");
     run("migrate-media.js");
-    run("migrate-files.js");
+    // migrate-studio creates the workshops table that migrate-files updates.
     run("migrate-studio.js");
+    run("migrate-files.js");
     require("./index.js");
   })
   .catch((err) => {
