@@ -14,6 +14,7 @@ export default function PaymentHistory() {
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
   const highlight = params.get("order_id");
+  const failed = params.get("status") === "failed";
 
   async function load(nextEmail = email) {
     setError("");
@@ -23,11 +24,12 @@ export default function PaymentHistory() {
         setRows(data);
         return;
       }
-      if (!nextEmail) {
+      if (!nextEmail && !highlight) {
         setRows([]);
         return;
       }
-      const qs = new URLSearchParams({ email: nextEmail });
+      const qs = new URLSearchParams();
+      if (nextEmail) qs.set("email", nextEmail);
       if (highlight) qs.set("order_id", highlight);
       const data = await api(`/api/payments/history?${qs.toString()}`);
       setRows(data);
@@ -85,6 +87,12 @@ export default function PaymentHistory() {
           ) : (
             <p className="muted">Payments for {user.email}</p>
           )}
+          {failed ? (
+            <p className="error">
+              The payment was not completed. No money was taken for a failed
+              payment; you can try again from the class or checkout page.
+            </p>
+          ) : null}
           {error ? <p className="error">{error}</p> : null}
           <div className="history-list">
             {rows.length === 0 ? (
@@ -133,7 +141,11 @@ export default function PaymentHistory() {
                       {p.phone ? ` · ${p.phone}` : ""}
                     </p>
                     <p className="muted">
-                      {p.payment_method}
+                      {p.payment_method === "paytm"
+                        ? "Paytm"
+                        : p.payment_method === "cashfree"
+                          ? "Cashfree"
+                          : p.payment_method}
                       {p.cf_order_id ? ` · Order ${p.cf_order_id}` : ""}
                     </p>
                     {p.class_id ? (

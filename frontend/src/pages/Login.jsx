@@ -3,9 +3,12 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
+import { safeNext } from "../safeNext";
 
 export default function Login() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = params.get("next");
   const { setSession } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,7 +22,12 @@ async function submit(e) {
         body: JSON.stringify({ email, password }),
       });
       setSession(data.token, data.user);
-      navigate(data.user.role === "admin" ? "/admin/dashboard" : "/");
+      navigate(
+        data.user.role === "admin"
+          ? safeNext(next?.startsWith("/admin") ? next : null, "/admin/dashboard")
+          : safeNext(next, "/"),
+        { replace: true }
+      );
     } catch (e) {
       setError(e.message);
     }
@@ -60,7 +68,9 @@ async function submit(e) {
               <Link to="/forgot-password">Forgot password?</Link>
             </p>
             <p className="muted">
-               New here?  <Link to="/register">Create an account</Link>
+               New here?  <Link to={next ? `/register?next=${encodeURIComponent(next)}` : "/register"}>
+                Create an account
+              </Link>
             </p>
           </form>
         </div>

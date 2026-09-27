@@ -45,6 +45,7 @@ export default function AdminStudio({ tab, classes, outlets }) {
     session_date: new Date().toISOString().slice(0, 10),
   });
   const [createdQr, setCreatedQr] = useState(null);
+  const [privateFilter, setPrivateFilter] = useState("all");
   const [error, setError] = useState("");
 
   async function load() {
@@ -110,6 +111,30 @@ export default function AdminStudio({ tab, classes, outlets }) {
     try {
       await api(`/api/admin/membership-plans/${id}`, { method: "DELETE" });
       if (planForm.id === id) setPlanForm(emptyPlan);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function updatePrivate(id, changes) {
+    setError("");
+    try {
+      await api(`/api/admin/private-bookings/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(changes),
+      });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function deletePrivate(b) {
+    if (!window.confirm(`Delete the booking for ${b.student_name}?`)) return;
+    setError("");
+    try {
+      await api(`/api/admin/private-bookings/${b.id}`, { method: "DELETE" });
       await load();
     } catch (err) {
       setError(err.message);
@@ -235,29 +260,117 @@ export default function AdminStudio({ tab, classes, outlets }) {
 
       {tab === "private" && (
         <>
-          <h1 className="serif">Private session bookings</h1>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>When</th>
-                <th>Status</th>
-                <th>Email</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data.private_bookings || []).map((b) => (
-                <tr key={b.id}>
-                  <td>{b.student_name}</td>
-                  <td>
-                    {String(b.preferred_date).slice(0, 10)} {b.preferred_time}
-                  </td>
-                  <td>{b.status}</td>
-                  <td>{b.email}</td>
+          <h1 className="serif">Private & home visit bookings</h1>
+          <p className="muted">
+            One-to-one sessions booked on the website. Home visits include the
+            student&apos;s address. Update the status as you confirm a teacher and
+            complete the session.
+          </p>
+          <div className="filter-row" role="group" aria-label="Filter bookings">
+            {[
+              ["all", "All"],
+              ["home", "Home visits"],
+              ["studio", "Studio"],
+              ["online", "Online"],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={`btn ${privateFilter === id ? "btn-green" : "btn-outline"}`}
+                onClick={() => setPrivateFilter(id)}
+              >
+                {label} (
+                {
+                  (data.private_bookings || []).filter(
+                    (b) => id === "all" || (b.session_type || "studio") === id
+                  ).length
+                }
+                )
+              </button>
+            ))}
+          </div>
+          <div className="table-scroll">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>When</th>
+                  <th>Type</th>
+                  <th>Address / studio</th>
+                  <th>Notes</th>
+                  <th>Status</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {(data.private_bookings || [])
+                  .filter(
+                    (b) => privateFilter === "all" || (b.session_type || "studio") === privateFilter
+                  )
+                  .map((b) => (
+                    <tr key={b.id}>
+                      <td>
+                        {b.student_name}
+                        <br />
+                        <span className="muted">{b.email}</span>
+                        {b.phone ? (
+                          <>
+                            <br />
+                            <a href={`tel:${b.phone}`}>{b.phone}</a>
+                          </>
+                        ) : null}
+                      </td>
+                      <td>
+                        {String(b.preferred_date).slice(0, 10)} {b.preferred_time}
+                      </td>
+                      <td>
+                        {b.session_type === "home"
+                          ? "Home visit"
+                          : b.session_type === "online"
+                            ? "Online"
+                            : "Studio"}
+                      </td>
+                      <td>
+                        {b.session_type === "home" && b.address ? (
+                          <a
+                            href={`https://maps.google.com/?q=${encodeURIComponent(b.address)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {b.address}
+                          </a>
+                        ) : (
+                          b.outlet_name || "—"
+                        )}
+                      </td>
+                      <td>{b.notes || "—"}</td>
+                      <td>
+                        <select
+                          value={b.status}
+                          onChange={(e) => updatePrivate(b.id, { status: e.target.value })}
+                          aria-label={`Status for ${b.student_name}`}
+                        >
+                          {["pending", "paid", "confirmed", "completed", "cancelled"].map((st) => (
+                            <option key={st} value={st}>
+                              {st}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => deletePrivate(b)}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -340,9 +453,12 @@ export default function AdminStudio({ tab, classes, outlets }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        api(`/api/admin/workshops/${w.id}`, { method: "DELETE" }).then(load)
-                      }
+                      onClick={() => {
+                        if (!window.confirm(`Delete ${w.title}?`)) return;
+                        api(`/api/admin/workshops/${w.id}`, { method: "DELETE" })
+                          .then(load)
+                          .catch((err) => setError(err.message));
+                      }}
                     >
                       Delete
                     </button>

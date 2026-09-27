@@ -30,7 +30,7 @@ export default function WeeklySchedule({
                     <div>
                       {s.start_time}–{s.end_time}
                     </div>
-                    <div>{s.class_title}</div>
+                    <div>{s.class_title || "Yoga session"}</div>
                     <div className="muted">{s.trainer_name}</div>
                     <span className="badge paid">{s.mode}</span>
                   </div>

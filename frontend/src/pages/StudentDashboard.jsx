@@ -187,7 +187,7 @@ export default function StudentDashboard() {
               <ul>
                 {onlineSlots.slice(0, 8).map((s) => (
                   <li key={s.id}>
-                    {dayName(s.day_of_week)} {s.start_time} · {s.class_title}
+                    {dayName(s.day_of_week)} {s.start_time} · {s.class_title || "Yoga session"}
                     {s.locked ? (
                       " (pay to unlock Meet)"
                     ) : s.meet_link ? (
@@ -222,6 +222,40 @@ export default function StudentDashboard() {
                   ))}
                 </tbody>
               </table>
+
+              {(data.private_bookings || []).length > 0 ? (
+                <>
+                  <h2>Private & home visit sessions</h2>
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>When</th>
+                        <th>Type</th>
+                        <th>Where</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.private_bookings.map((b) => (
+                        <tr key={b.id}>
+                          <td>
+                            {dateLabel(b.preferred_date)} {b.preferred_time}
+                          </td>
+                          <td>
+                            {b.session_type === "home"
+                              ? "Home visit"
+                              : b.session_type === "online"
+                                ? "Online"
+                                : "Studio"}
+                          </td>
+                          <td>{b.address || b.outlet_name || "—"}</td>
+                          <td>{b.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : null}
 
               <h2>Payments</h2>
               {(data.payments || []).map((p) => (

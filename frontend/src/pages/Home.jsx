@@ -172,6 +172,10 @@ export default function Home() {
                       <Link className="btn btn-green" to="/private">
                         Book private session
                       </Link>
+                    ) : c.title === "Private Home Visit Yoga" ? (
+                      <Link className="btn btn-green" to="/home-visit">
+                        Book home visit
+                      </Link>
                     ) : (
                       <>
                         <Link className="btn btn-outline" to={`/courses/${c.id}?mode=studio`}>
@@ -225,6 +229,28 @@ export default function Home() {
                 <Link to="/workshops">Workshops & trips</Link>
               </div>
             </article>
+          </div>
+        </div>
+      </section>
+
+      <section className="section" id="home-visit">
+        <div className="container home-visit-band">
+          <div>
+            <p className="muted">Private sessions</p>
+            <h2>Yoga at your home</h2>
+            <p>
+              Book a one-to-one class where a teacher visits your home, or take a
+              private session at the studio or online. Pick your date and time,
+              pay securely, and we confirm your teacher.
+            </p>
+          </div>
+          <div className="mode-row">
+            <Link className="btn btn-green" to="/home-visit">
+              Book a home visit
+            </Link>
+            <Link className="btn btn-outline" to="/private">
+              Other private options
+            </Link>
           </div>
         </div>
       </section>
@@ -287,7 +313,7 @@ export default function Home() {
                   <p>{r.comment}</p>
                   <strong>{r.client_name}</strong>
                   <p className="muted">
-                    {r.source === "google" ? "Google review" : r.trainer_name || "Website review"}
+                    {r.source === "google" ? "Google review" : "Website review"}
                   </p>
                 </article>
               ))}
@@ -297,7 +323,6 @@ export default function Home() {
           )}
           <div style={{ marginTop: 28 }}>
             <ReviewForm
-              trainers={data.trainers}
               googleReviewUrl={data.google_review_url}
               onCreated={(review) =>
                 setData((prev) => ({

@@ -6,11 +6,12 @@ import { DAYS } from "../scheduleUtils";
 import AttendanceCalendar from "../components/AttendanceCalendar";
 import AdminStudio from "./AdminStudio";
 
-const WEEKDAYS = DAYS.filter((d) => d.id <= 5);
 const ADMIN_TABS = [
   "payments",
+  "users",
   "classes",
   "trainers",
+  "reviews",
   "media",
   "outlets",
   "schedules",
@@ -28,12 +29,13 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function emptyWeekDays() {
+// Mon–Fri are on by default; Sat/Sun are opt-in for weekend classes.
+function emptyWeekDays(enableWeekdays = true) {
   return Object.fromEntries(
-    WEEKDAYS.map((d) => [
+    DAYS.map((d) => [
       d.id,
       {
-        enabled: true,
+        enabled: enableWeekdays && d.id <= 5,
         start_time: "07:00",
         end_time: "08:00",
         trainer_id: "",
@@ -58,6 +60,9 @@ export default function AdminDashboard() {
   const [classes, setClasses] = useState([]);
   const [trainersData, setTrainersData] = useState({ trainers: [], reviews: [] });
   const [contacts, setContacts] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [userSearch, setUserSearch] = useState("");
+  const [reviews, setReviews] = useState([]);
   const [googleSettings, setGoogleSettings] = useState({
     google_place_id: "",
     has_api_key: false,
@@ -118,7 +123,6 @@ export default function AdminDashboard() {
   const [scheduleForm, setScheduleForm] = useState(emptySchedule);
   const [weekPlan, setWeekPlan] = useState({
     outlet_id: "",
-    class_id: "",
     mode: "studio",
     days: emptyWeekDays(),
   });
@@ -133,11 +137,10 @@ export default function AdminDashboard() {
   };
   const [mediaForm, setMediaForm] = useState(emptyMedia);
   const [reviewForm, setReviewForm] = useState({
-    trainer_id: "",
     client_name: "",
     rating: 5,
     comment: "",
-    is_home_featured: false,
+    is_home_featured: true,
   });
   const [error, setError] = useState("");
   const [weekNotice, setWeekNotice] = useState("");
@@ -158,8 +161,10 @@ export default function AdminDashboard() {
       api("/api/admin/google"),
       api("/api/admin/outlets"),
       api("/api/admin/media"),
+      api("/api/admin/users"),
+      api("/api/admin/reviews"),
     ]);
-    const [p, c, t, ct, sch, g, o, m] = results;
+    const [p, c, t, ct, sch, g, o, m, u, rv] = results;
     const failed = results.find((r) => r.status === "rejected");
     if (failed) setError(failed.reason?.message || "Could not load some admin data");
     else setError("");
@@ -171,6 +176,8 @@ export default function AdminDashboard() {
     if (g.status === "fulfilled") setGoogleSettings(g.value);
     if (o.status === "fulfilled") setOutlets(o.value);
     if (m.status === "fulfilled") setMediaItems(m.value);
+    if (u.status === "fulfilled") setUsers(u.value);
+    if (rv.status === "fulfilled") setReviews(rv.value);
     const authFail = results.find(
       (r) =>
         r.status === "rejected" &&
@@ -197,26 +204,24 @@ export default function AdminDashboard() {
   }, [tab]);
 
   useEffect(() => {
-    if (!weekPlan.outlet_id || !weekPlan.class_id) return;
-    const next = emptyWeekDays();
-    (scheduleData.schedules || [])
-      .filter(
-        (s) =>
-          String(s.outlet_id) === String(weekPlan.outlet_id) &&
-          String(s.class_id) === String(weekPlan.class_id) &&
-          s.mode === weekPlan.mode &&
-          Number(s.day_of_week) <= 5
-      )
-      .forEach((s) => {
+    if (!weekPlan.outlet_id) return;
+    const existing = (scheduleData.schedules || []).filter(
+      (s) =>
+        String(s.outlet_id) === String(weekPlan.outlet_id) &&
+        !s.class_id &&
+        s.mode === weekPlan.mode
+    );
+    const next = emptyWeekDays(existing.length === 0);
+    existing.forEach((s) => {
         next[s.day_of_week] = {
           enabled: true,
           start_time: String(s.start_time).slice(0, 5),
           end_time: String(s.end_time).slice(0, 5),
           trainer_id: s.trainer_id ? String(s.trainer_id) : "",
         };
-      });
+    });
     setWeekPlan((prev) => ({ ...prev, days: next }));
-  }, [weekPlan.outlet_id, weekPlan.class_id, weekPlan.mode, scheduleData.schedules]);
+  }, [weekPlan.outlet_id, weekPlan.mode, scheduleData.schedules]);
 
   async function uploadImage(file, setter) {
     const body = new FormData();
@@ -250,30 +255,53 @@ export default function AdminDashboard() {
     loadAll();
   }
 
+  // Shared delete with confirmation; shows the server error instead of failing silently.
+  async function removeItem(path, message, after) {
+    if (!window.confirm(message)) return;
+    setError("");
+    try {
+      await api(path, { method: "DELETE" });
+      after?.();
+      await loadAll();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function saveClass(e) {
     e.preventDefault();
-    const path = classForm.id
-      ? `/api/admin/classes/${classForm.id}`
-      : "/api/admin/classes";
-    await api(path, {
-      method: classForm.id ? "PUT" : "POST",
-      body: JSON.stringify(classForm),
-    });
-    setClassForm(emptyClass);
-    loadAll();
+    setError("");
+    try {
+      const path = classForm.id
+        ? `/api/admin/classes/${classForm.id}`
+        : "/api/admin/classes";
+      await api(path, {
+        method: classForm.id ? "PUT" : "POST",
+        body: JSON.stringify(classForm),
+      });
+      setClassForm(emptyClass);
+      loadAll();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   async function saveTrainer(e) {
     e.preventDefault();
-    const path = trainerForm.id
-      ? `/api/admin/trainers/${trainerForm.id}`
-      : "/api/admin/trainers";
-    await api(path, {
-      method: trainerForm.id ? "PUT" : "POST",
-      body: JSON.stringify(trainerForm),
-    });
-    setTrainerForm(emptyTrainer);
-    loadAll();
+    setError("");
+    try {
+      const path = trainerForm.id
+        ? `/api/admin/trainers/${trainerForm.id}`
+        : "/api/admin/trainers";
+      await api(path, {
+        method: trainerForm.id ? "PUT" : "POST",
+        body: JSON.stringify(trainerForm),
+      });
+      setTrainerForm(emptyTrainer);
+      loadAll();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   async function saveWeekPlan(e) {
@@ -281,7 +309,7 @@ export default function AdminDashboard() {
     setWeekNotice("");
     setError("");
     try {
-      const slots = WEEKDAYS.map((d) => ({
+      const slots = DAYS.map((d) => ({
         day_of_week: d.id,
         ...weekPlan.days[d.id],
       }));
@@ -289,12 +317,11 @@ export default function AdminDashboard() {
         method: "POST",
         body: JSON.stringify({
           outlet_id: weekPlan.outlet_id,
-          class_id: weekPlan.class_id,
           mode: weekPlan.mode,
           slots,
         }),
       });
-      setWeekNotice("Monday–Friday schedule saved for this studio.");
+      setWeekNotice("Weekly teacher schedule saved for this studio.");
       loadAll();
     } catch (err) {
       setError(err.message);
@@ -313,23 +340,28 @@ export default function AdminDashboard() {
 
   function applyTeacherToWeek(trainer_id) {
     const days = { ...weekPlan.days };
-    WEEKDAYS.forEach((d) => {
-      days[d.id] = { ...days[d.id], trainer_id };
+    DAYS.forEach((d) => {
+      if (days[d.id]?.enabled) days[d.id] = { ...days[d.id], trainer_id };
     });
     setWeekPlan({ ...weekPlan, days });
   }
 
   async function saveSchedule(e) {
     e.preventDefault();
-    const path = scheduleForm.id
-      ? `/api/admin/schedules/${scheduleForm.id}`
-      : "/api/admin/schedules";
-    await api(path, {
-      method: scheduleForm.id ? "PUT" : "POST",
-      body: JSON.stringify(scheduleForm),
-    });
-    setScheduleForm(emptySchedule);
-    loadAll();
+    setError("");
+    try {
+      const path = scheduleForm.id
+        ? `/api/admin/schedules/${scheduleForm.id}`
+        : "/api/admin/schedules";
+      await api(path, {
+        method: scheduleForm.id ? "PUT" : "POST",
+        body: JSON.stringify(scheduleForm),
+      });
+      setScheduleForm(emptySchedule);
+      loadAll();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   async function saveOutlet(e) {
@@ -406,18 +438,35 @@ export default function AdminDashboard() {
 
   async function saveReview(e) {
     e.preventDefault();
-    await api("/api/admin/reviews", {
-      method: "POST",
-      body: JSON.stringify(reviewForm),
-    });
-    setReviewForm({
-      trainer_id: "",
-      client_name: "",
-      rating: 5,
-      comment: "",
-      is_home_featured: false,
-    });
-    loadAll();
+    setError("");
+    try {
+      await api("/api/admin/reviews", {
+        method: "POST",
+        body: JSON.stringify(reviewForm),
+      });
+      setReviewForm({
+        client_name: "",
+        rating: 5,
+        comment: "",
+        is_home_featured: true,
+      });
+      loadAll();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function toggleReviewFeatured(review) {
+    setError("");
+    try {
+      await api(`/api/admin/reviews/${review.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ is_home_featured: !review.is_home_featured }),
+      });
+      loadAll();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   function signOut() {
@@ -426,6 +475,12 @@ export default function AdminDashboard() {
   }
 
   const s = payments.summary || {};
+  const userQuery = userSearch.trim().toLowerCase();
+  const filteredUsers = users.filter(
+    (u) =>
+      !userQuery ||
+      [u.name, u.email, u.phone].some((v) => String(v || "").toLowerCase().includes(userQuery))
+  );
 
   return (
     <div className="admin-shell">
@@ -435,16 +490,18 @@ export default function AdminDashboard() {
         </h2>
         {[
           ["payments", "Payments"],
+          ["users", "Registered users"],
           ["classes", "Yoga classes"],
           ["trainers", "Teachers"],
+          ["reviews", "Website reviews"],
           ["media", "Photos & videos"],
           ["outlets", "Studios"],
-          ["schedules", "Studio schedule"],
+          ["schedules", "Teacher week schedule"],
           ["attendance", "Attendance"],
           ["contacts", "Contact leads"],
           ["settings", "Social & maps"],
           ["trials", "Free trials"],
-          ["private", "Private bookings"],
+          ["private", "Private & home visits"],
           ["workshops", "Workshops & trips"],
           ["members", "Memberships"],
           ["qr", "Attendance QR"],
@@ -630,13 +687,15 @@ export default function AdminDashboard() {
                       <button
                         className="btn btn-outline"
                         type="button"
-                        onClick={async () => {
-                          await api(`/api/admin/classes/${c.id}`, {
-                            method: "DELETE",
-                          });
-                          if (classForm.id === c.id) setClassForm(emptyClass);
-                          loadAll();
-                        }}
+                        onClick={() =>
+                          removeItem(
+                            `/api/admin/classes/${c.id}`,
+                            `Delete ${c.title}? Its schedules, enrollments, and attendance will also be removed. Past payments are kept.`,
+                            () => {
+                              if (classForm.id === c.id) setClassForm(emptyClass);
+                            }
+                          )
+                        }
                       >
                         Delete
                       </button>
@@ -653,57 +712,6 @@ export default function AdminDashboard() {
             <h1 className="serif">
               {trainerForm.id ? "Edit teacher" : "Add teacher"}
             </h1>
-            <form
-              className="admin-form"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const saved = await api("/api/admin/google", {
-                  method: "PUT",
-                  body: JSON.stringify({
-                    google_place_id: googleSettings.google_place_id,
-                  }),
-                });
-                setGoogleSettings({ ...googleSettings, ...saved });
-              }}
-            >
-              <label className="full">
-                Google Place ID (to fetch Google reviews)
-                <input
-                  value={googleSettings.google_place_id || ""}
-                  onChange={(e) =>
-                    setGoogleSettings({
-                      ...googleSettings,
-                      google_place_id: e.target.value,
-                    })
-                  }
-                  placeholder="ChIJ..."
-                />
-              </label>
-              <p className="muted full">
-                {googleSettings.has_api_key
-                  ? "Places API key is set. Save the Place ID, then sync."
-                  : "Add GOOGLE_PLACES_API_KEY to server/.env, then sync Google reviews."}
-              </p>
-              <button className="btn btn-green" type="submit">
-                Save Place ID
-              </button>
-              <button
-                className="btn btn-outline"
-                type="button"
-                onClick={async () => {
-                  const result = await api("/api/admin/google/sync", {
-                    method: "POST",
-                  });
-                  setError(
-                    result.reason ||
-                      `Fetched ${result.synced} Google review(s).`
-                  );
-                  loadAll();
-                }}
-              >
-                Fetch Google reviews
-              </button>
-            </form>
             <form className="admin-form" onSubmit={saveTrainer}>
               <label>
                 Name
@@ -762,79 +770,6 @@ export default function AdminDashboard() {
               ) : null}
             </form>
 
-            <form className="admin-form" onSubmit={saveReview}>
-              <label>
-                Teacher
-                <select
-                  value={reviewForm.trainer_id}
-                  onChange={(e) =>
-                    setReviewForm({ ...reviewForm, trainer_id: e.target.value })
-                  }
-                  required
-                >
-                  <option value="">Select</option>
-                  {trainersData.trainers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Client name
-                <input
-                  value={reviewForm.client_name}
-                  onChange={(e) =>
-                    setReviewForm({
-                      ...reviewForm,
-                      client_name: e.target.value,
-                    })
-                  }
-                  required
-                />
-              </label>
-              <label>
-                Rating
-                <input
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={reviewForm.rating}
-                  onChange={(e) =>
-                    setReviewForm({ ...reviewForm, rating: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                Show on home
-                <select
-                  value={reviewForm.is_home_featured ? "yes" : "no"}
-                  onChange={(e) =>
-                    setReviewForm({
-                      ...reviewForm,
-                      is_home_featured: e.target.value === "yes",
-                    })
-                  }
-                >
-                  <option value="no">No</option>
-                  <option value="yes">Yes</option>
-                </select>
-              </label>
-              <label className="full">
-                Review
-                <textarea
-                  rows={3}
-                  value={reviewForm.comment}
-                  onChange={(e) =>
-                    setReviewForm({ ...reviewForm, comment: e.target.value })
-                  }
-                />
-              </label>
-              <button className="btn btn-green" type="submit">
-                Save review
-              </button>
-            </form>
-
             <div className="grid-3">
               {trainersData.trainers.map((t) => (
                 <article className="card" key={t.id}>
@@ -856,15 +791,15 @@ export default function AdminDashboard() {
                       <button
                         className="btn btn-outline"
                         type="button"
-                        onClick={async () => {
-                          await api(`/api/admin/trainers/${t.id}`, {
-                            method: "DELETE",
-                          });
-                          if (trainerForm.id === t.id) {
-                            setTrainerForm(emptyTrainer);
-                          }
-                          loadAll();
-                        }}
+                        onClick={() =>
+                          removeItem(
+                            `/api/admin/trainers/${t.id}`,
+                            `Delete ${t.name}? They will be removed from the week schedule.`,
+                            () => {
+                              if (trainerForm.id === t.id) setTrainerForm(emptyTrainer);
+                            }
+                          )
+                        }
                       >
                         Delete
                       </button>
@@ -878,14 +813,15 @@ export default function AdminDashboard() {
 
         {tab === "schedules" && (
           <>
-            <h1 className="serif">Studio week schedule</h1>
+            <h1 className="serif">Teacher week schedule</h1>
             <p className="muted">
-              Pick a studio address and class, then set Mon–Fri time and teacher
-              (for example Downtown Monday 7–8 Ankur, Tuesday 7–8 Ankur Tomer).
+              Select only the yoga studio, then assign a teacher and time for each
+              day, including Saturday and Sunday weekend classes (for example
+              Downtown Monday 7–8 Ankur, Saturday 8–9 Ankur Tomer).
             </p>
             <form className="admin-form" onSubmit={saveWeekPlan}>
               <label className="full">
-                Studio address
+                Yoga studio
                 <select
                   value={weekPlan.outlet_id}
                   onChange={(e) =>
@@ -897,23 +833,6 @@ export default function AdminDashboard() {
                   {(scheduleData.outlets || []).map((o) => (
                     <option key={o.id} value={o.id}>
                       {o.name} — {o.address}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Yoga class
-                <select
-                  value={weekPlan.class_id}
-                  onChange={(e) =>
-                    setWeekPlan({ ...weekPlan, class_id: e.target.value })
-                  }
-                  required
-                >
-                  <option value="">Select class</option>
-                  {(scheduleData.classes || []).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.title}
                     </option>
                   ))}
                 </select>
@@ -931,14 +850,14 @@ export default function AdminDashboard() {
                 </select>
               </label>
               <label>
-                Same teacher all week
+                Same teacher for all selected days
                 <select
                   value=""
                   onChange={(e) =>
                     e.target.value && applyTeacherToWeek(e.target.value)
                   }
                 >
-                  <option value="">Apply to Mon–Fri</option>
+                  <option value="">Apply to ticked days</option>
                   {(scheduleData.trainers || []).map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name}
@@ -946,7 +865,7 @@ export default function AdminDashboard() {
                   ))}
                 </select>
               </label>
-              <div className="full">
+              <div className="full table-scroll">
                 <table className="table">
                   <thead>
                     <tr>
@@ -958,9 +877,9 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {WEEKDAYS.map((d) => {
+                    {DAYS.map((d) => {
                       const row = weekPlan.days[d.id] || {
-                        enabled: true,
+                        enabled: false,
                         start_time: "07:00",
                         end_time: "08:00",
                         trainer_id: "",
@@ -971,6 +890,7 @@ export default function AdminDashboard() {
                             <input
                               type="checkbox"
                               checked={Boolean(row.enabled)}
+                              aria-label={`Include ${d.label}`}
                               onChange={(e) =>
                                 updateWeekDay(d.id, "enabled", e.target.checked)
                               }
@@ -978,11 +898,13 @@ export default function AdminDashboard() {
                           </td>
                           <td>
                             <strong>{d.label}</strong>
+                            {d.id >= 6 ? <span className="muted"> · weekend</span> : null}
                           </td>
                           <td>
                             <input
                               type="time"
                               value={row.start_time || "07:00"}
+                              disabled={!row.enabled}
                               onChange={(e) =>
                                 updateWeekDay(d.id, "start_time", e.target.value)
                               }
@@ -992,6 +914,7 @@ export default function AdminDashboard() {
                             <input
                               type="time"
                               value={row.end_time || "08:00"}
+                              disabled={!row.enabled}
                               onChange={(e) =>
                                 updateWeekDay(d.id, "end_time", e.target.value)
                               }
@@ -1000,6 +923,7 @@ export default function AdminDashboard() {
                           <td>
                             <select
                               value={row.trainer_id || ""}
+                              disabled={!row.enabled}
                               onChange={(e) =>
                                 updateWeekDay(d.id, "trainer_id", e.target.value)
                               }
@@ -1019,7 +943,7 @@ export default function AdminDashboard() {
                 </table>
               </div>
               <button className="btn btn-green" type="submit">
-                Save Mon–Fri schedule
+                Save week schedule
               </button>
               {weekNotice ? <p className="notice full">{weekNotice}</p> : null}
             </form>
@@ -1056,9 +980,8 @@ export default function AdminDashboard() {
                       class_id: e.target.value,
                     })
                   }
-                  required
                 >
-                  <option value="">Select class</option>
+                  <option value="">No specific class</option>
                   {(scheduleData.classes || []).map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.title}
@@ -1183,8 +1106,8 @@ export default function AdminDashboard() {
                     <td>
                       {row.start_time}–{row.end_time}
                     </td>
-                    <td>{row.class_title}</td>
-                    <td>{row.trainer_name}</td>
+                    <td>{row.class_title || "Studio session"}</td>
+                    <td>{row.trainer_name || "—"}</td>
                     <td>{row.mode}</td>
                     <td>
                       <div className="mode-row">
@@ -1195,7 +1118,7 @@ export default function AdminDashboard() {
                             setScheduleForm({
                               id: row.id,
                               outlet_id: row.outlet_id,
-                              class_id: row.class_id,
+                              class_id: row.class_id || "",
                               trainer_id: row.trainer_id || "",
                               day_of_week: String(row.day_of_week),
                               start_time: String(row.start_time).slice(0, 5),
@@ -1209,12 +1132,12 @@ export default function AdminDashboard() {
                         <button
                           className="btn btn-outline"
                           type="button"
-                          onClick={async () => {
-                            await api(`/api/admin/schedules/${row.id}`, {
-                              method: "DELETE",
-                            });
-                            loadAll();
-                          }}
+                          onClick={() =>
+                            removeItem(
+                              `/api/admin/schedules/${row.id}`,
+                              "Delete this schedule slot?"
+                            )
+                          }
                         >
                           Delete
                         </button>
@@ -1737,6 +1660,259 @@ export default function AdminDashboard() {
                 ))}
               </tbody>
             </table>
+          </>
+        )}
+
+        {tab === "users" && (
+          <>
+            <h1 className="serif">Registered users</h1>
+            <p className="muted">
+              Everyone who created an account on the website ({users.length} total).
+            </p>
+            <div className="filter-row">
+              <input
+                type="search"
+                placeholder="Search name, email, or phone"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                aria-label="Search users"
+              />
+              <span className="muted">
+                Showing {filteredUsers.length} of {users.length}
+              </span>
+            </div>
+            <div className="table-scroll">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Contact</th>
+                    <th>Role</th>
+                    <th>Registered</th>
+                    <th>Courses</th>
+                    <th>Paid</th>
+                    <th>Membership until</th>
+                    <th>Attended</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((u) => (
+                    <tr key={u.id}>
+                      <td>{u.name}</td>
+                      <td>
+                        <a href={`mailto:${u.email}`}>{u.email}</a>
+                        {u.phone ? (
+                          <>
+                            <br />
+                            <a href={`tel:${u.phone}`}>{u.phone}</a>
+                          </>
+                        ) : null}
+                      </td>
+                      <td>
+                        <span className={`badge ${u.role === "admin" ? "pending" : "paid"}`}>
+                          {u.role}
+                        </span>
+                      </td>
+                      <td>{u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}</td>
+                      <td>{u.enrollments}</td>
+                      <td>
+                        {money(u.paid_amount)}
+                        <br />
+                        <span className="muted">{u.paid_payments} payments</span>
+                      </td>
+                      <td>
+                        {u.membership_expires
+                          ? String(u.membership_expires).slice(0, 10)
+                          : "—"}
+                      </td>
+                      <td>{u.classes_attended}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {tab === "reviews" && (
+          <>
+            <h1 className="serif">Website reviews</h1>
+            <p className="muted">
+              Reviews are for Yoga For Us as a whole (not for individual
+              teachers). Featured reviews show on the home page.
+            </p>
+            <form className="admin-form" onSubmit={saveReview}>
+              <label>
+                Client name
+                <input
+                  value={reviewForm.client_name}
+                  onChange={(e) =>
+                    setReviewForm({ ...reviewForm, client_name: e.target.value })
+                  }
+                  required
+                />
+              </label>
+              <label>
+                Rating
+                <select
+                  value={reviewForm.rating}
+                  onChange={(e) =>
+                    setReviewForm({ ...reviewForm, rating: e.target.value })
+                  }
+                >
+                  {[5, 4, 3, 2, 1].map((n) => (
+                    <option key={n} value={n}>
+                      {n} star{n === 1 ? "" : "s"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="full">
+                Review
+                <textarea
+                  rows={3}
+                  value={reviewForm.comment}
+                  onChange={(e) =>
+                    setReviewForm({ ...reviewForm, comment: e.target.value })
+                  }
+                  required
+                />
+              </label>
+              <label>
+                <span>
+                  <input
+                    type="checkbox"
+                    checked={reviewForm.is_home_featured}
+                    onChange={(e) =>
+                      setReviewForm({
+                        ...reviewForm,
+                        is_home_featured: e.target.checked,
+                      })
+                    }
+                  />{" "}
+                  Show on home page
+                </span>
+              </label>
+              <div className="full">
+                <button className="btn btn-green" type="submit">
+                  Add review
+                </button>
+              </div>
+            </form>
+
+            <form
+              className="admin-form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setError("");
+                try {
+                  const saved = await api("/api/admin/google", {
+                    method: "PUT",
+                    body: JSON.stringify({
+                      google_place_id: googleSettings.google_place_id,
+                    }),
+                  });
+                  setGoogleSettings({ ...googleSettings, ...saved });
+                } catch (err) {
+                  setError(err.message);
+                }
+              }}
+            >
+              <label className="full">
+                Google Place ID (to fetch Google reviews)
+                <input
+                  value={googleSettings.google_place_id || ""}
+                  onChange={(e) =>
+                    setGoogleSettings({
+                      ...googleSettings,
+                      google_place_id: e.target.value,
+                    })
+                  }
+                  placeholder="ChIJ..."
+                />
+              </label>
+              <p className="muted full">
+                {googleSettings.has_api_key
+                  ? "Places API key is set. Save the Place ID, then sync."
+                  : "Add GOOGLE_PLACES_API_KEY to backend/.env, then sync Google reviews."}
+              </p>
+              <button className="btn btn-green" type="submit">
+                Save Place ID
+              </button>
+              <button
+                className="btn btn-outline"
+                type="button"
+                onClick={async () => {
+                  try {
+                    const result = await api("/api/admin/google/sync", {
+                      method: "POST",
+                    });
+                    setError(
+                      result.reason || `Fetched ${result.synced} Google review(s).`
+                    );
+                    loadAll();
+                  } catch (err) {
+                    setError(err.message);
+                  }
+                }}
+              >
+                Fetch Google reviews
+              </button>
+            </form>
+
+            <div className="table-scroll">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Client</th>
+                    <th>Rating</th>
+                    <th>Review</th>
+                    <th>Source</th>
+                    <th>Home page</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {reviews.map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        {r.client_name}
+                        <br />
+                        <span className="muted">
+                          {r.created_at ? new Date(r.created_at).toLocaleDateString() : ""}
+                        </span>
+                      </td>
+                      <td>{"★".repeat(r.rating || 5)}</td>
+                      <td>{r.comment}</td>
+                      <td>{r.source === "google" ? "Google" : "Website"}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className={`btn ${r.is_home_featured ? "btn-green" : "btn-outline"}`}
+                          onClick={() => toggleReviewFeatured(r)}
+                        >
+                          {r.is_home_featured ? "Shown" : "Hidden"}
+                        </button>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() =>
+                            removeItem(
+                              `/api/admin/reviews/${r.id}`,
+                              `Delete the review from ${r.client_name}?`
+                            )
+                          }
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
 

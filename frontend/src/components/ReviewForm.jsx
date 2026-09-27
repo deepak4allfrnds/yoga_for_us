@@ -1,17 +1,12 @@
 import { useState } from "react";
 import { api } from "../api";
 
-export default function ReviewForm({
-  trainers = [],
-  defaultTrainerId = "",
-  onCreated,
-  googleReviewUrl,
-}) {
+// Reviews are about the studio / website experience, not individual teachers.
+export default function ReviewForm({ onCreated, googleReviewUrl }) {
   const [form, setForm] = useState({
     client_name: "",
     rating: 5,
     comment: "",
-    trainer_id: defaultTrainerId,
   });
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -34,7 +29,6 @@ export default function ReviewForm({
         client_name: "",
         rating: 5,
         comment: "",
-        trainer_id: defaultTrainerId,
       });
       onCreated?.(review);
     } catch (err) {
@@ -45,8 +39,9 @@ export default function ReviewForm({
   return (
     <div className="panel">
       <h3 className="serif" style={{ color: "var(--green-dark)", marginTop: 0 }}>
-        Add a review
+        Review Yoga For Us
       </h3>
+      <p className="muted">Tell others about your experience with our studio and website.</p>
       <form className="form" onSubmit={submit}>
         <label>
           Your name
@@ -57,23 +52,6 @@ export default function ReviewForm({
             required
           />
         </label>
-        {trainers.length ? (
-          <label>
-            Teacher (optional)
-            <select
-              name="trainer_id"
-              value={form.trainer_id}
-              onChange={update}
-            >
-              <option value="">Studio / general</option>
-              {trainers.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
         <label>
           Rating
           <select name="rating" value={form.rating} onChange={update}>

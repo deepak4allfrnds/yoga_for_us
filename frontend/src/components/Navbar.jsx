@@ -86,6 +86,9 @@ export default function Navbar() {
               <NavLink to="/private" onClick={close}>
                 Private yoga
               </NavLink>
+              <NavLink to="/home-visit" onClick={close}>
+                Home visit yoga
+              </NavLink>
               <NavLink to="/workshops" onClick={close}>
                 Workshops & trips
               </NavLink>

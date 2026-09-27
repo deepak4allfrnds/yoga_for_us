@@ -14,6 +14,10 @@ export default function Footer({ outlets = [], settings = null }) {
 
   const list = outlets.length ? outlets : fetched?.outlets || [];
   const social = settings || fetched?.settings;
+  const hasSocial = Boolean(
+    social &&
+      (social.whatsapp || social.instagram_url || social.facebook_url || social.youtube_url)
+  );
 
   return (
     <footer className="footer">
@@ -24,7 +28,8 @@ export default function Footer({ outlets = [], settings = null }) {
             White-and-green studios for everyday practice. Come for the asana,
             stay for the breath.
           </p>
-          <SocialLinks settings={social} />
+          {hasSocial ? <h3 className="serif footer-follow">Follow us</h3> : null}
+          <SocialLinks settings={social} className="social-row footer-social" />
         </div>
         <div>
           <h3 className="serif">Studio hours</h3>

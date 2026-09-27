@@ -23,6 +23,7 @@ import Checkout from "./pages/Checkout";
 import StudentDashboard from "./pages/StudentDashboard";
 import Attend from "./pages/Attend";
 import OnlineClasses from "./pages/OnlineClasses";
+import NotFound from "./pages/NotFound";
 
 export default function App() {
   return (
@@ -35,7 +36,8 @@ export default function App() {
           <Route path="/courses/:id/pay" element={<Payment />} />
           <Route path="/pay" element={<Checkout />} />
           <Route path="/trial" element={<Trial />} />
-          <Route path="/private" element={<PrivateYoga />} />
+          <Route path="/private" element={<PrivateYoga key="private" />} />
+          <Route path="/home-visit" element={<PrivateYoga key="home" defaultType="home" />} />
           <Route path="/membership" element={<Membership />} />
           <Route path="/online" element={<OnlineClasses />} />
           <Route path="/workshops" element={<Workshops />} />
@@ -65,6 +67,8 @@ export default function App() {
               </ProtectAdmin>
             }
           />
+          <Route path="/admin/*" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

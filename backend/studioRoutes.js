@@ -1,7 +1,16 @@
 const crypto = require("crypto");
 const db = require("./db");
 const { requireAdmin, requireAuth, optionalAuth } = require("./middleware/auth");
-const { ensureStudioTables, getSettings, fulfillPaidPayment } = require("./migrate-studio");
+const {
+  ensureStudioTables,
+  getSettings,
+  fulfillPaidPayment,
+  PRIVATE_CLASS_TITLE,
+  HOME_VISIT_CLASS_TITLE,
+} = require("./migrate-studio");
+
+const PRIVATE_SESSION_TYPES = ["studio", "online", "home"];
+const PRIVATE_STATUSES = ["pending", "paid", "confirmed", "completed", "cancelled"];
 
 function clientOrigin() {
   return String(process.env.CLIENT_ORIGIN || "http://localhost:5173")
@@ -61,17 +70,16 @@ async function resolveOrderItem(body) {
   if (kind === "private") {
     const booking = await db.query("SELECT * FROM private_bookings WHERE id = $1", [body.ref_id]);
     if (!booking.rows[0]) throw Object.assign(new Error("Private booking not found"), { status: 404 });
-    const klass = await db.query(
-      "SELECT * FROM classes WHERE title = $1 LIMIT 1",
-      ["Personal/Private Yoga"]
-    );
-    const price = Number(klass.rows[0]?.price || 2499);
+    const isHome = booking.rows[0].session_type === "home";
+    const title = isHome ? HOME_VISIT_CLASS_TITLE : PRIVATE_CLASS_TITLE;
+    const klass = await db.query("SELECT * FROM classes WHERE title = $1 LIMIT 1", [title]);
+    const price = Number(klass.rows[0]?.price || (isHome ? 3499 : 2499));
     return {
       kind,
       ref_id: booking.rows[0].id,
       class_id: klass.rows[0]?.id || null,
       amount: Math.max(price, 1),
-      title: "Personal/Private Yoga",
+      title,
     };
   }
   if (!body.class_id) {
@@ -159,17 +167,40 @@ function registerStudioRoutes(app) {
     }
   });
 
+  app.get("/api/public/private-pricing", async (_req, res) => {
+    try {
+      await ensureStudioTables();
+      const rows = await db.query(
+        "SELECT title, price, duration, description FROM classes WHERE title = ANY($1)",
+        [[PRIVATE_CLASS_TITLE, HOME_VISIT_CLASS_TITLE]]
+      );
+      const find = (title) => rows.rows.find((r) => r.title === title) || null;
+      res.json({ private: find(PRIVATE_CLASS_TITLE), home: find(HOME_VISIT_CLASS_TITLE) });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Could not load private session prices" });
+    }
+  });
+
   app.post("/api/public/private-bookings", optionalAuth, async (req, res) => {
-    const { student_name, email, phone, preferred_date, preferred_time, notes } = req.body;
+    const { student_name, email, phone, preferred_date, preferred_time, notes, address, outlet_id } =
+      req.body;
+    const session_type = PRIVATE_SESSION_TYPES.includes(req.body.session_type)
+      ? req.body.session_type
+      : "studio";
     if (!student_name || !email || !preferred_date || !preferred_time) {
       return res.status(400).json({ error: "Name, email, date, and time are required" });
+    }
+    if (session_type === "home" && !String(address || "").trim()) {
+      return res.status(400).json({ error: "Home address is required for a home visit" });
     }
     try {
       await ensureStudioTables();
       const row = await db.query(
         `INSERT INTO private_bookings
-           (user_id, student_name, email, phone, preferred_date, preferred_time, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+           (user_id, student_name, email, phone, preferred_date, preferred_time, notes,
+            session_type, address, outlet_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING *`,
         [
           req.user?.id || null,
@@ -179,6 +210,9 @@ function registerStudioRoutes(app) {
           preferred_date,
           preferred_time,
           notes || null,
+          session_type,
+          session_type === "home" ? String(address).trim() : null,
+          session_type === "studio" ? outlet_id || null : null,
         ]
       );
       res.status(201).json(row.rows[0]);
@@ -255,8 +289,11 @@ function registerStudioRoutes(app) {
             [userId]
           ),
           db.query(
-            `SELECT * FROM private_bookings WHERE user_id = $1 OR lower(email) = lower($2)
-             ORDER BY preferred_date DESC`,
+            `SELECT b.*, o.name AS outlet_name
+             FROM private_bookings b
+             LEFT JOIN outlets o ON o.id = b.outlet_id
+             WHERE b.user_id = $1 OR lower(b.email) = lower($2)
+             ORDER BY b.preferred_date DESC`,
             [userId, req.user.email]
           ),
           db.query(
@@ -416,7 +453,13 @@ function registerStudioRoutes(app) {
         await Promise.all([
           getSettings(),
           db.query("SELECT * FROM free_trials ORDER BY created_at DESC LIMIT 80"),
-          db.query("SELECT * FROM private_bookings ORDER BY created_at DESC LIMIT 80"),
+          db.query(
+            `SELECT b.*, o.name AS outlet_name, u.name AS account_name
+             FROM private_bookings b
+             LEFT JOIN outlets o ON o.id = b.outlet_id
+             LEFT JOIN users u ON u.id = b.user_id
+             ORDER BY b.created_at DESC LIMIT 200`
+          ),
           db.query("SELECT * FROM workshops ORDER BY id DESC"),
           db.query(
             `SELECT b.*, w.title AS workshop_title, w.category
@@ -638,6 +681,37 @@ function registerStudioRoutes(app) {
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Could not delete membership plan" });
+    }
+  });
+
+  app.put("/api/admin/private-bookings/:id", requireAdmin, async (req, res) => {
+    const { status, admin_note } = req.body;
+    if (status && !PRIVATE_STATUSES.includes(status)) {
+      return res.status(400).json({ error: "Unknown booking status" });
+    }
+    try {
+      await ensureStudioTables();
+      const result = await db.query(
+        `UPDATE private_bookings
+         SET status = COALESCE($1, status), admin_note = COALESCE($2, admin_note)
+         WHERE id = $3 RETURNING *`,
+        [status || null, admin_note ?? null, req.params.id]
+      );
+      if (!result.rows[0]) return res.status(404).json({ error: "Booking not found" });
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Could not update booking" });
+    }
+  });
+
+  app.delete("/api/admin/private-bookings/:id", requireAdmin, async (req, res) => {
+    try {
+      await db.query("DELETE FROM private_bookings WHERE id = $1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Could not delete booking" });
     }
   });
 

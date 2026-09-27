@@ -28,6 +28,13 @@ const {
   fetchCashfreeOrder,
   isPaidStatus,
 } = require("./cashfree");
+const {
+  useTestPaytm,
+  createPaytmOrder,
+  fetchPaytmStatus,
+  paytmPaymentStatus,
+  verifySignature: verifyPaytmSignature,
+} = require("./paytm");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -66,6 +73,7 @@ app.use(
   })
 );
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 app.use(
   "/uploads",
   express.static(uploadsDir, {
@@ -257,9 +265,8 @@ app.get("/api/public/home", async (_req, res) => {
     const [classes, reviews, outlets, site, schedules, trainers, media, settings] = await Promise.all([
       db.query("SELECT * FROM classes ORDER BY id"),
       db.query(
-        `SELECT r.*, t.name AS trainer_name
-         FROM reviews r
-         LEFT JOIN trainers t ON t.id = r.trainer_id
+        `SELECT r.* FROM reviews r
+         WHERE r.is_home_featured IS NOT FALSE
          ORDER BY r.created_at DESC, r.id DESC
          LIMIT 18`
       ),
@@ -363,8 +370,9 @@ app.get("/api/public/contact", async (_req, res) => {
   }
 });
 
+// Reviews are for the studio/website as a whole, not for individual teachers.
 app.post("/api/public/reviews", async (req, res) => {
-  const { client_name, rating, comment, trainer_id } = req.body;
+  const { client_name, rating, comment } = req.body;
   if (!client_name || !comment) {
     return res.status(400).json({ error: "Name and review are required" });
   }
@@ -374,19 +382,11 @@ app.post("/api/public/reviews", async (req, res) => {
     const result = await db.query(
       `INSERT INTO reviews
        (trainer_id, client_name, rating, comment, is_home_featured, source)
-       VALUES ($1, $2, $3, $4, TRUE, 'website')
+       VALUES (NULL, $1, $2, $3, TRUE, 'website')
        RETURNING *`,
-      [trainer_id || null, client_name.trim(), stars, comment.trim()]
+      [client_name.trim(), stars, comment.trim()]
     );
-    const trainer = result.rows[0].trainer_id
-      ? await db.query("SELECT name FROM trainers WHERE id = $1", [
-          result.rows[0].trainer_id,
-        ])
-      : { rows: [] };
-    res.status(201).json({
-      ...result.rows[0],
-      trainer_name: trainer.rows[0]?.name || null,
-    });
+    res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not save review" });
@@ -473,44 +473,88 @@ app.post("/api/public/enroll", async (req, res) => {
   }
 });
 
-app.post("/api/payments/cashfree/order", optionalAuth, async (req, res) => {
+function clientOrigin() {
+  return String(process.env.CLIENT_ORIGIN || "http://localhost:5173")
+    .split(",")[0]
+    .trim();
+}
+
+function apiOrigin(req) {
+  if (process.env.PUBLIC_API_URL) return process.env.PUBLIC_API_URL.replace(/\/$/, "");
+  const proto = req.headers["x-forwarded-proto"] || req.protocol;
+  return `${proto}://${req.get("host")}`;
+}
+
+// Creates the pending payment row shared by every gateway.
+async function createPendingPayment(req, gateway) {
   const { student_name, email, phone, class_id, mode, outlet_id } = req.body;
   if (!student_name || !email) {
-    return res.status(400).json({ error: "Name and email are required" });
+    throw Object.assign(new Error("Name and email are required"), { status: 400 });
   }
+  await ensurePaymentColumns();
+  await ensureStudioTables();
+  const item = await resolveOrderItem(req.body);
+  const payment = await db.query(
+    `INSERT INTO payments
+       (student_name, email, phone, class_id, amount, status, payment_method, user_id, mode, outlet_id, kind, ref_id)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11)
+     RETURNING *`,
+    [
+      student_name.trim(),
+      email.trim().toLowerCase(),
+      phone || null,
+      item.class_id || class_id || null,
+      item.amount,
+      gateway,
+      req.user?.id || null,
+      mode || item.kind,
+      mode === "studio" ? outlet_id || null : null,
+      item.kind,
+      item.ref_id,
+    ]
+  );
+  return { row: payment.rows[0], item };
+}
+
+// Marks a payment paid/failed/pending and unlocks what was bought.
+async function settlePayment(paymentId, status, gatewayPaymentId, gateway) {
+  await db.query(
+    `UPDATE payments
+     SET status = $1, payment_method = $2, cf_payment_id = COALESCE($3, cf_payment_id)
+     WHERE id = $4`,
+    [status, gateway, gatewayPaymentId || null, paymentId]
+  );
+  if (status === "paid") {
+    const fresh = await db.query("SELECT * FROM payments WHERE id = $1", [paymentId]);
+    await fulfillPaidPayment(fresh.rows[0]).catch((err) => console.error(err));
+  }
+  const detail = await db.query(`${PAYMENT_SELECT} WHERE p.id = $1`, [paymentId]);
+  return detail.rows[0];
+}
+
+app.get("/api/payments/gateways", (_req, res) => {
+  const list = String(process.env.PAYMENT_GATEWAYS || "paytm,cashfree")
+    .split(",")
+    .map((g) => g.trim().toLowerCase())
+    .filter((g) => ["paytm", "cashfree"].includes(g));
+  res.json({
+    gateways: list.length ? list : ["paytm"],
+    paytm_test: useTestPaytm(),
+    cashfree_test: useTestSdk(),
+  });
+});
+
+app.post("/api/payments/cashfree/order", optionalAuth, async (req, res) => {
   try {
-    await ensurePaymentColumns();
-    await ensureStudioTables();
-    const item = await resolveOrderItem(req.body);
+    const { row, item } = await createPendingPayment(req, "cashfree");
+    const { student_name, email, phone } = req.body;
     const amount = item.amount;
-    const payment = await db.query(
-      `INSERT INTO payments
-         (student_name, email, phone, class_id, amount, status, payment_method, user_id, mode, outlet_id, kind, ref_id)
-       VALUES ($1, $2, $3, $4, $5, 'pending', 'cashfree', $6, $7, $8, $9, $10)
-       RETURNING *`,
-      [
-        student_name.trim(),
-        email.trim().toLowerCase(),
-        phone || null,
-        item.class_id || class_id || null,
-        amount,
-        req.user?.id || null,
-        mode || item.kind,
-        mode === "studio" ? outlet_id || null : null,
-        item.kind,
-        item.ref_id,
-      ]
-    );
-    const row = payment.rows[0];
     const orderId = `yoga_${row.id}_${Date.now()}`.slice(0, 50);
-    const origin = String(process.env.CLIENT_ORIGIN || "http://localhost:5173")
-      .split(",")[0]
-      .trim();
     const digits = String(phone || "9999999999").replace(/\D/g, "").slice(-10) || "9999999999";
     const cf = await createCashfreeOrder({
       orderId,
       amount,
-      returnUrl: `${origin}/payments/history?order_id={order_id}`,
+      returnUrl: `${clientOrigin()}/payments/history?order_id={order_id}`,
       customer: {
         id: req.user?.id || `guest${row.id}`,
         name: student_name.trim(),
@@ -534,8 +578,95 @@ app.post("/api/payments/cashfree/order", optionalAuth, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    const status = err.status || 500;
-    res.status(status).json({ error: err.message || "Could not start Cashfree payment" });
+    res.status(err.status || 500).json({ error: err.message || "Could not start Cashfree payment" });
+  }
+});
+
+// --- Paytm ---
+// The gateway order id is stored in payments.cf_order_id and the Paytm txn id in
+// payments.cf_payment_id, so payment history and verification work for both gateways.
+
+app.post("/api/payments/paytm/order", optionalAuth, async (req, res) => {
+  try {
+    const { row, item } = await createPendingPayment(req, "paytm");
+    const { student_name, email, phone } = req.body;
+    const orderId = `YOGA${row.id}T${Date.now()}`.slice(0, 50);
+    const digits = String(phone || "").replace(/\D/g, "").slice(-10);
+    const order = await createPaytmOrder({
+      orderId,
+      amount: item.amount,
+      callbackUrl: `${apiOrigin(req)}/api/payments/paytm/callback`,
+      customer: {
+        id: req.user?.id ? `user${req.user.id}` : `guest${row.id}`,
+        name: student_name.trim(),
+        email: email.trim().toLowerCase(),
+        phone: digits,
+      },
+    });
+    await db.query("UPDATE payments SET cf_order_id = $1 WHERE id = $2", [orderId, row.id]);
+    res.status(201).json({
+      gateway: "paytm",
+      payment_id: row.id,
+      order_id: orderId,
+      txn_token: order.txn_token,
+      mid: order.mid,
+      host: order.host,
+      test_mode: order.test_mode,
+      amount: item.amount,
+      class_title: item.title,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(err.status || 500).json({ error: err.message || "Could not start Paytm payment" });
+  }
+});
+
+async function verifyPaytmOrder(orderId) {
+  await ensurePaymentColumns();
+  const found = await db.query("SELECT * FROM payments WHERE cf_order_id = $1 LIMIT 1", [orderId]);
+  const row = found.rows[0];
+  if (!row) throw Object.assign(new Error("Payment not found"), { status: 404 });
+  // Always confirm with Paytm's server-side Order Status API; never trust the browser.
+  const result = await fetchPaytmStatus(orderId);
+  const status = paytmPaymentStatus(result.status);
+  const payment = await settlePayment(row.id, status, result.txn_id, "paytm");
+  return { payment, paid: status === "paid", message: result.message || "" };
+}
+
+app.post("/api/payments/paytm/verify", optionalAuth, async (req, res) => {
+  const { order_id } = req.body;
+  if (!order_id) return res.status(400).json({ error: "Order id is required" });
+  try {
+    const result = await verifyPaytmOrder(order_id);
+    res.json({ ...result, test_mode: useTestPaytm() });
+  } catch (err) {
+    console.error(err);
+    res.status(err.status || 500).json({ error: err.message || "Could not verify Paytm payment" });
+  }
+});
+
+// Paytm posts a form here at the end of its redirect flow. We verify the order,
+// then send the shopper back to the React payment history page with a normal GET
+// (a POST straight to a SPA route would show "page not found").
+app.post("/api/payments/paytm/callback", async (req, res) => {
+  const orderId = req.body.ORDERID || req.body.orderId;
+  const target = (ok) =>
+    `${clientOrigin()}/payments/history?order_id=${encodeURIComponent(orderId || "")}${ok ? "" : "&status=failed"}`;
+  try {
+    if (!orderId) return res.redirect(303, `${clientOrigin()}/payments/history?status=failed`);
+    if (!useTestPaytm() && req.body.CHECKSUMHASH) {
+      const valid = verifyPaytmSignature(
+        { ...req.body },
+        process.env.PAYTM_MERCHANT_KEY,
+        req.body.CHECKSUMHASH
+      );
+      if (!valid) console.warn("Paytm callback checksum mismatch for", orderId);
+    }
+    const result = await verifyPaytmOrder(orderId);
+    res.redirect(303, target(result.paid));
+  } catch (err) {
+    console.error(err);
+    res.redirect(303, target(false));
   }
 });
 
@@ -558,19 +689,14 @@ app.post("/api/payments/cashfree/verify", optionalAuth, async (req, res) => {
     const paid = isPaidStatus(cfOrder);
     const raw = String(cfOrder.order_status || "").toUpperCase();
     const nextStatus = paid ? "paid" : raw === "ACTIVE" || raw === "PENDING" ? "pending" : "failed";
-    await db.query(
-      `UPDATE payments
-       SET status = $1, payment_method = 'cashfree', cf_payment_id = COALESCE($2, cf_payment_id)
-       WHERE id = $3`,
-      [nextStatus, cfOrder.cf_payment_id || cfOrder.payment_id || null, row.id]
+    const payment = await settlePayment(
+      row.id,
+      nextStatus,
+      cfOrder.cf_payment_id || cfOrder.payment_id || null,
+      "cashfree"
     );
-    if (paid) {
-      const fresh = await db.query("SELECT * FROM payments WHERE id = $1", [row.id]);
-      await fulfillPaidPayment(fresh.rows[0]).catch((err) => console.error(err));
-    }
-    const detail = await db.query(`${PAYMENT_SELECT} WHERE p.id = $1`, [row.id]);
     res.json({
-      payment: detail.rows[0],
+      payment,
       paid,
       test_sdk: useTestSdk(),
     });
@@ -984,12 +1110,30 @@ app.put("/api/admin/classes/:id", requireAdmin, async (req, res) => {
 });
 
 app.delete("/api/admin/classes/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "Invalid class id" });
+  // Clear every row that points at the class first. Older databases may have been
+  // created without ON DELETE CASCADE / SET NULL, which made the delete fail.
+  const client = await db.pool.connect();
   try {
-    await db.query("DELETE FROM classes WHERE id = $1", [req.params.id]);
+    await client.query("BEGIN");
+    await client.query("UPDATE payments SET class_id = NULL WHERE class_id = $1", [id]);
+    for (const table of ["weekly_schedules", "attendance", "class_enrollments", "attendance_qr"]) {
+      const exists = await client.query("SELECT to_regclass($1) AS t", [table]);
+      if (exists.rows[0].t) {
+        await client.query(`DELETE FROM ${table} WHERE class_id = $1`, [id]);
+      }
+    }
+    const result = await client.query("DELETE FROM classes WHERE id = $1 RETURNING id", [id]);
+    await client.query("COMMIT");
+    if (!result.rows[0]) return res.status(404).json({ error: "Class not found" });
     res.json({ ok: true });
   } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
     console.error(err);
-    res.status(500).json({ error: "Could not delete class" });
+    res.status(500).json({ error: `Could not delete class: ${err.message}` });
+  } finally {
+    client.release();
   }
 });
 
@@ -1046,28 +1190,52 @@ app.delete("/api/admin/trainers/:id", requireAdmin, async (req, res) => {
   }
 });
 
+app.get("/api/admin/reviews", requireAdmin, async (_req, res) => {
+  try {
+    await ensureReviewColumns();
+    const result = await db.query("SELECT * FROM reviews ORDER BY created_at DESC, id DESC");
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load reviews" });
+  }
+});
+
 app.post("/api/admin/reviews", requireAdmin, async (req, res) => {
-  const { trainer_id, client_name, rating, comment, is_home_featured } =
-    req.body;
-  if (!trainer_id || !client_name) {
-    return res.status(400).json({ error: "Trainer and client name required" });
+  const { client_name, rating, comment, is_home_featured } = req.body;
+  if (!client_name || !comment) {
+    return res.status(400).json({ error: "Client name and review are required" });
   }
   try {
+    await ensureReviewColumns();
     const result = await db.query(
-      `INSERT INTO reviews (trainer_id, client_name, rating, comment, is_home_featured)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      `INSERT INTO reviews (trainer_id, client_name, rating, comment, is_home_featured, source)
+       VALUES (NULL, $1, $2, $3, $4, 'website') RETURNING *`,
       [
-        trainer_id,
-        client_name,
-        rating || 5,
-        comment || "",
-        Boolean(is_home_featured),
+        client_name.trim(),
+        Math.min(5, Math.max(1, Number(rating) || 5)),
+        comment.trim(),
+        is_home_featured !== false,
       ]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not create review" });
+  }
+});
+
+app.put("/api/admin/reviews/:id", requireAdmin, async (req, res) => {
+  try {
+    const result = await db.query(
+      "UPDATE reviews SET is_home_featured = $1 WHERE id = $2 RETURNING *",
+      [Boolean(req.body.is_home_featured), req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Review not found" });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not update review" });
   }
 });
 
@@ -1131,6 +1299,31 @@ app.post("/api/admin/google/sync", requireAdmin, async (_req, res) => {
   }
 });
 
+app.get("/api/admin/users", requireAdmin, async (_req, res) => {
+  try {
+    await ensurePaymentColumns();
+    await ensureScheduleTables();
+    await ensureStudioTables();
+    const result = await db.query(
+      `SELECT u.id, u.name, u.email, u.phone, u.role, u.created_at,
+              (SELECT COUNT(*)::int FROM class_enrollments e WHERE e.user_id = u.id) AS enrollments,
+              (SELECT COUNT(*)::int FROM payments p
+                 WHERE (p.user_id = u.id OR lower(p.email) = lower(u.email)) AND p.status = 'paid') AS paid_payments,
+              (SELECT COALESCE(SUM(p.amount), 0)::numeric FROM payments p
+                 WHERE (p.user_id = u.id OR lower(p.email) = lower(u.email)) AND p.status = 'paid') AS paid_amount,
+              (SELECT MAX(m.expires_at) FROM memberships m
+                 WHERE (m.user_id = u.id OR lower(m.email) = lower(u.email)) AND m.status = 'active') AS membership_expires,
+              (SELECT COUNT(*)::int FROM attendance a WHERE a.user_id = u.id AND a.present) AS classes_attended
+       FROM users u
+       ORDER BY u.created_at DESC, u.id DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not load registered users" });
+  }
+});
+
 app.get("/api/admin/contacts", requireAdmin, async (_req, res) => {
   try {
     const result = await db.query(
@@ -1172,13 +1365,17 @@ app.get("/api/admin/schedules", requireAdmin, async (_req, res) => {
   }
 });
 
+// Weekly teacher assignment for a studio: pick the studio only, then a teacher and
+// time for each day (Mon–Sun). These slots are not tied to a yoga class.
 app.post("/api/admin/schedules/week", requireAdmin, async (req, res) => {
-  const { outlet_id, class_id, mode, slots } = req.body;
-  if (!outlet_id || !class_id || !Array.isArray(slots)) {
-    return res.status(400).json({ error: "Studio, class, and weekday slots are required" });
+  const { outlet_id, mode, slots } = req.body;
+  if (!outlet_id || !Array.isArray(slots)) {
+    return res.status(400).json({ error: "Studio and day slots are required" });
   }
   const classMode = mode || "studio";
+  const dayNames = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   try {
+    await ensureScheduleTables();
     const saved = [];
     for (const slot of slots) {
       const day = Number(slot.day_of_week);
@@ -1186,21 +1383,21 @@ app.post("/api/admin/schedules/week", requireAdmin, async (req, res) => {
       if (slot.enabled === false) {
         await db.query(
           `DELETE FROM weekly_schedules
-           WHERE outlet_id = $1 AND class_id = $2 AND mode = $3 AND day_of_week = $4`,
-          [outlet_id, class_id, classMode, day]
+           WHERE outlet_id = $1 AND class_id IS NULL AND mode = $2 AND day_of_week = $3`,
+          [outlet_id, classMode, day]
         );
         continue;
       }
       if (!slot.start_time || !slot.end_time || !slot.trainer_id) {
         return res.status(400).json({
-          error: `Choose a teacher and time for ${["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][day]}`,
+          error: `Choose a teacher and time for ${dayNames[day]}`,
         });
       }
       const existing = await db.query(
         `SELECT id FROM weekly_schedules
-         WHERE outlet_id = $1 AND class_id = $2 AND mode = $3 AND day_of_week = $4
+         WHERE outlet_id = $1 AND class_id IS NULL AND mode = $2 AND day_of_week = $3
          ORDER BY id LIMIT 1`,
-        [outlet_id, class_id, classMode, day]
+        [outlet_id, classMode, day]
       );
       if (existing.rows[0]) {
         const updated = await db.query(
@@ -1214,16 +1411,8 @@ app.post("/api/admin/schedules/week", requireAdmin, async (req, res) => {
         const created = await db.query(
           `INSERT INTO weekly_schedules
            (outlet_id, class_id, trainer_id, day_of_week, start_time, end_time, mode)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-          [
-            outlet_id,
-            class_id,
-            slot.trainer_id,
-            day,
-            slot.start_time,
-            slot.end_time,
-            classMode,
-          ]
+           VALUES ($1, NULL, $2, $3, $4, $5, $6) RETURNING *`,
+          [outlet_id, slot.trainer_id, day, slot.start_time, slot.end_time, classMode]
         );
         saved.push(created.rows[0]);
       }
@@ -1238,8 +1427,8 @@ app.post("/api/admin/schedules/week", requireAdmin, async (req, res) => {
 app.post("/api/admin/schedules", requireAdmin, async (req, res) => {
   const { outlet_id, class_id, trainer_id, day_of_week, start_time, end_time, mode } =
     req.body;
-  if (!outlet_id || !class_id || !day_of_week || !start_time || !end_time) {
-    return res.status(400).json({ error: "Studio, class, day, and times are required" });
+  if (!outlet_id || !day_of_week || !start_time || !end_time) {
+    return res.status(400).json({ error: "Studio, day, and times are required" });
   }
   try {
     const result = await db.query(
@@ -1248,7 +1437,7 @@ app.post("/api/admin/schedules", requireAdmin, async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [
         outlet_id,
-        class_id,
+        class_id || null,
         trainer_id || null,
         day_of_week,
         start_time,
@@ -1274,7 +1463,7 @@ app.put("/api/admin/schedules/:id", requireAdmin, async (req, res) => {
        WHERE id = $8 RETURNING *`,
       [
         outlet_id,
-        class_id,
+        class_id || null,
         trainer_id || null,
         day_of_week,
         start_time,
@@ -1481,19 +1670,23 @@ if (process.env.NODE_ENV === "production" && fs.existsSync(clientDist)) {
 }
 
 const HOST = process.env.HOST || "0.0.0.0";
-ensurePaymentColumns()
+// Create every table before rewriteStoredUrls touches them (fresh databases
+// previously failed on "relation workshops does not exist").
+ensureAdminUser()
+  .then(() => ensurePaymentColumns())
   .then(() => ensureMediaTable())
+  .then(() => ensureScheduleTables())
+  .then(() => ensureStudioTables())
+  .then(() => ensureReviewColumns())
   .then(() => ensureFileCache())
   .then(() => importDiskUploads())
   .then(() => rewriteStoredUrls())
-  .then(() => ensureStudioTables())
-  .then(() => ensureAdminUser())
   .then(() => {
     app.listen(PORT, HOST, () => {
       console.log(`Harmony Yoga API running on http://${HOST}:${PORT}`);
     });
   })
   .catch((err) => {
-    console.error("Could not create admin user", err);
+    console.error("Could not prepare the database", err);
     process.exit(1);
   });

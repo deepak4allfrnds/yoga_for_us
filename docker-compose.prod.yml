@@ -45,7 +45,19 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@yoga.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       SCHEMA_PATH: /app/schema.sql
-      port: "8081:8080"
+      GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
+      GOOGLE_PLACE_ID: ${GOOGLE_PLACE_ID:-}
+      CASHFREE_APP_ID: ${CASHFREE_APP_ID:-}
+      CASHFREE_SECRET_KEY: ${CASHFREE_SECRET_KEY:-}
+      CASHFREE_ENV: ${CASHFREE_ENV:-sandbox}
+      CASHFREE_TEST_MODE: ${CASHFREE_TEST_MODE:-}
+      PAYTM_MID: ${PAYTM_MID:-}
+      PAYTM_MERCHANT_KEY: ${PAYTM_MERCHANT_KEY:-}
+      PAYTM_WEBSITE: ${PAYTM_WEBSITE:-DEFAULT}
+      PAYTM_ENV: ${PAYTM_ENV:-production}
+      PAYTM_TEST_MODE: ${PAYTM_TEST_MODE:-}
+      PAYMENT_GATEWAYS: ${PAYMENT_GATEWAYS:-paytm,cashfree}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-}
     volumes:
       - yoga_uploads:/app/uploads
     depends_on:
@@ -61,7 +73,8 @@ services:
       dockerfile: Dockerfile
     container_name: yoga_frontend
     ports:
-      - "5173:5173"
+      # Nginx in the frontend image listens on 80
+      - "80:80"
     depends_on:
       - backend
     networks:

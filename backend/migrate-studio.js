@@ -10,7 +10,11 @@ const CLASS_SEED = [
   ["Beginners Yoga", "Slow foundations for first-timers and returning students.", 1999, "60 min", "https://images.unsplash.com/photo-1545389336-cf090694435e?auto=format&fit=crop&w=1200&q=80"],
   ["Senior Citizen Yoga", "Gentle, joint-friendly practice with chairs and props.", 1799, "45 min", "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=1200&q=80"],
   ["Personal/Private Yoga", "One-to-one session. Pick your preferred date and time.", 2499, "60 min private", "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&fit=crop&w=1200&q=80"],
+  ["Private Home Visit Yoga", "A teacher comes to your home for a one-to-one session. Share your address, date, and time.", 3499, "60 min at your home", "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1200&q=80"],
 ];
+
+const PRIVATE_CLASS_TITLE = "Personal/Private Yoga";
+const HOME_VISIT_CLASS_TITLE = "Private Home Visit Yoga";
 
 async function ensureStudioTables() {
   await db.query(`
@@ -64,6 +68,15 @@ async function ensureStudioTables() {
       payment_id INTEGER,
       created_at TIMESTAMP DEFAULT NOW()
     );
+    ALTER TABLE private_bookings ADD COLUMN IF NOT EXISTS session_type VARCHAR(20) DEFAULT 'studio';
+    ALTER TABLE private_bookings ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE private_bookings ADD COLUMN IF NOT EXISTS outlet_id INTEGER REFERENCES outlets(id) ON DELETE SET NULL;
+    ALTER TABLE private_bookings ADD COLUMN IF NOT EXISTS admin_note TEXT;
+
+    CREATE TABLE IF NOT EXISTS app_seeds (
+      key VARCHAR(255) PRIMARY KEY,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
 
     CREATE TABLE IF NOT EXISTS workshops (
       id SERIAL PRIMARY KEY,
@@ -113,7 +126,12 @@ async function ensureStudioTables() {
     );
   `);
 
+  // Seed each default class only once. Once a seed is recorded in app_seeds,
+  // an admin can delete that class and it will not come back on the next request.
   for (const [title, description, price, duration, image_url] of CLASS_SEED) {
+    const key = `class:${title}`;
+    const seeded = await db.query("SELECT 1 FROM app_seeds WHERE key = $1", [key]);
+    if (seeded.rows[0]) continue;
     const exists = await db.query("SELECT id FROM classes WHERE title = $1", [title]);
     if (!exists.rows[0]) {
       await db.query(
@@ -122,6 +140,7 @@ async function ensureStudioTables() {
         [title, description, price, duration, image_url]
       );
     }
+    await db.query("INSERT INTO app_seeds (key) VALUES ($1) ON CONFLICT DO NOTHING", [key]);
   }
 
   const plans = await db.query("SELECT COUNT(*)::int AS n FROM membership_plans");
@@ -249,4 +268,10 @@ if (require.main === module) {
   });
 }
 
-module.exports = { ensureStudioTables, getSettings, fulfillPaidPayment };
+module.exports = {
+  ensureStudioTables,
+  getSettings,
+  fulfillPaidPayment,
+  PRIVATE_CLASS_TITLE,
+  HOME_VISIT_CLASS_TITLE,
+};

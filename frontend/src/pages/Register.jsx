@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
+import { safeNext } from "../safeNext";
 
 export default function Register() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = params.get("next");
   const { setSession } = useAuth();
   const [form, setForm] = useState({
     name: "",
@@ -28,7 +31,7 @@ export default function Register() {
         body: JSON.stringify(form),
       });
       setSession(data.token, data.user);
-      navigate("/");
+      navigate(safeNext(next, "/"), { replace: true });
     } catch (err) {
       setError(err.message);
     }
@@ -77,7 +80,8 @@ export default function Register() {
             </button>
             {error ? <p className="error">{error}</p> : null}
             <p className="muted">
-              Already registered? <Link to="/login">Login</Link>
+              Already registered?{" "}
+              <Link to={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}>Login</Link>
             </p>
           </form>
         </div>

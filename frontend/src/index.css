@@ -573,6 +573,99 @@ select {
   gap: 28px;
 }
 
+.footer .footer-follow {
+  margin-top: 22px;
+  font-size: 20px;
+}
+
+/* Social links sit on the dark green footer, so they need light text. */
+.footer .social-row a {
+  color: #ffffff;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+.footer .social-row a:hover,
+.footer .social-row a:focus-visible {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: #ffffff;
+}
+
+.home-visit-band {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--green-soft);
+}
+
+.session-type-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 760px;
+  margin-bottom: 24px;
+}
+
+.session-type {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+  color: var(--green-dark);
+  cursor: pointer;
+  font: inherit;
+}
+
+.session-type span {
+  font-size: 14px;
+  color: #5b6b62;
+}
+
+.session-type .price {
+  margin: 4px 0 0;
+  font-weight: 700;
+  color: var(--green-dark);
+}
+
+.session-type.is-active {
+  border-color: var(--green);
+  background: var(--green-soft);
+  box-shadow: 0 0 0 2px var(--green) inset;
+}
+
+.pay-buttons {
+  display: grid;
+  gap: 10px;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.filter-row input[type="search"] {
+  min-width: 260px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
 .page-hero {
   padding: 56px 0 20px;
   background: var(--green-soft);
@@ -857,7 +950,9 @@ select {
   .admin-form,
   .course-detail,
   .payment-layout,
-  .week-grid {
+  .week-grid,
+  .home-visit-band,
+  .session-type-row {
     grid-template-columns: 1fr;
   }
 
