@@ -143,9 +143,16 @@ export default function CourseDetail() {
       const rest = prev.filter(
         (r) => String(r.session_date).slice(0, 10) !== session_date
       );
-      return [...rest, { session_date, present, class_id: id }];
+      return present === null ? rest : [...rest, { session_date, present, class_id: id }];
     });
     try {
+      if (present === null) {
+        await api(
+          `/api/user/attendance?class_id=${encodeURIComponent(id)}&session_date=${session_date}`,
+          { method: "DELETE" }
+        );
+        return;
+      }
       const row = await api("/api/user/attendance", {
         method: "POST",
         body: JSON.stringify({
@@ -276,8 +283,8 @@ export default function CourseDetail() {
                         Attendance calendar
                       </h3>
                       <p className="muted">
-                        Paid window: {startDate} to {endDate} (due date). Mark today
-                        or a future class day only.
+                        Paid from {startDate} · next due date <strong>{endDate}</strong>.
+                        You can mark or change any class day up to the due date.
                       </p>
                       <AttendanceCalendar
                         slots={studioSlots}
@@ -355,7 +362,7 @@ export default function CourseDetail() {
                         Attendance calendar
                       </h3>
                       <p className="muted">
-                        Paid window: {startDate} to {endDate} (due date).
+                        Paid from {startDate} · next due date <strong>{endDate}</strong>.
                       </p>
                       <AttendanceCalendar
                         slots={onlineSlots}

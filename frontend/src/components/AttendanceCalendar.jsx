@@ -91,40 +91,58 @@ export default function AttendanceCalendar({
           const key = isoDate(date);
           const inWindow = inPaidWindow(date);
           const scheduled = isClassDay(date);
-          const rec = inWindow ? recordFor(key) : null;
-          const past = date < today;
+          const found = inWindow ? recordFor(key) : null;
+          const rec = found && !found.cleared ? found : null;
+          const isToday = date.getTime() === today.getTime();
           const isPresent = rec?.present === true;
           const isAbsent = rec && rec.present === false;
           const cls = [
             "cal-cell",
             scheduled ? "scheduled" : "",
             !inWindow ? "empty" : "",
+            isToday ? "today" : "",
             isPresent ? "present" : "",
             isAbsent ? "absent" : "",
           ]
             .filter(Boolean)
             .join(" ");
-          const canToggle = !viewOnly && !disabled && scheduled && !past;
+          // Any class day from the start date to the due date can be marked or
+          // changed, including past days; days after the due date stay locked.
+          const canToggle = !viewOnly && !disabled && scheduled;
           return (
             <button
               key={key}
               type="button"
               className={cls}
               disabled={viewOnly ? !rec : !canToggle}
+              title={
+                canToggle
+                  ? isPresent
+                    ? "Present — click to change to Absent"
+                    : isAbsent
+                      ? "Absent — click to clear"
+                      : "Click to mark Present"
+                  : undefined
+              }
               onClick={() => {
                 if (!canToggle || !onToggle) return;
-                const nextPresent = !isPresent;
+                // Cycle: not marked -> Present -> Absent -> not marked
+                const next = !rec || rec.cleared ? true : isPresent ? false : null;
                 setLocalMarks((prev) => ({
                   ...prev,
-                  [key]: { session_date: key, present: nextPresent },
+                  [key]:
+                    next === null
+                      ? { session_date: key, cleared: true }
+                      : { session_date: key, present: next },
                 }));
-                onToggle(key, nextPresent);
+                onToggle(key, next);
               }}
             >
               <span>{date.getDate()}</span>
               {inWindow && isPresent ? <small>Present</small> : null}
               {inWindow && isAbsent ? <small>Absent</small> : null}
               {canToggle && !rec ? <small>Mark</small> : null}
+              {endDate && key === endDate ? <small className="cal-due">Due</small> : null}
             </button>
           );
         })}
@@ -133,7 +151,7 @@ export default function AttendanceCalendar({
         {viewOnly
           ? "Green is present. Red is absent. Use Prev/Next to see other months."
           : startDate && endDate
-            ? `Mark attendance from ${startDate} to ${endDate} (due date). Past days stay closed.`
+            ? `Mark attendance from ${startDate} to your due date ${endDate}. Click a class day to mark Present, click again for Absent, and once more to clear it. Days after the due date unlock when you renew.`
             : "Green days are class days. Click a class day to mark attendance."}
       </p>
     </div>

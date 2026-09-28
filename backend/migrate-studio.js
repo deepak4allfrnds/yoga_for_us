@@ -38,6 +38,12 @@ async function ensureStudioTables() {
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS upi_ref VARCHAR(120);
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS qr_submitted_at TIMESTAMP;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP;
+    -- When the payment was confirmed (gateway success or admin approval).
+    -- Access periods and due dates are counted from this moment.
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP;
+
+    -- How long one payment for a class gives access (1, 3, 6, 12 months).
+    ALTER TABLE classes ADD COLUMN IF NOT EXISTS validity_months INTEGER;
 
     -- Which listings a class appears in: studio (offline), online, home (home visit).
     ALTER TABLE classes ADD COLUMN IF NOT EXISTS categories TEXT[];
@@ -207,6 +213,26 @@ async function getSettings() {
   return result.rows[0] || null;
 }
 
+// Date (YYYY-MM-DD) the payment was confirmed: admin approval / gateway success.
+function paidDate(payment) {
+  const when = payment.paid_at || payment.reviewed_at || payment.created_at || new Date();
+  const d = new Date(when);
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+// Access period for one class payment, as a Postgres interval string.
+// Admin-set validity_months wins; otherwise read "8 weeks" / "3 months" / "1 year"
+// from the duration text; otherwise 1 month.
+function accessPeriod(course) {
+  const months = Number(course?.validity_months);
+  if (months > 0) return `${months} months`;
+  const text = String(course?.duration || "");
+  const match = text.match(/(\d+)\s*(week|month|year)/i);
+  if (match) return `${Number(match[1])} ${match[2].toLowerCase()}s`;
+  return "1 month";
+}
+
 async function fulfillPaidPayment(payment) {
   const kind = payment.kind || "class";
   const ref = payment.ref_id;
@@ -219,8 +245,8 @@ async function fulfillPaidPayment(payment) {
     const months = Number(row.duration_months || 3);
     await db.query(
       `INSERT INTO memberships (user_id, plan_id, email, starts_at, expires_at, status, payment_id)
-       VALUES ($1, $2, $3, CURRENT_DATE, (CURRENT_DATE + ($4::int * INTERVAL '1 month'))::date, 'active', $5)`,
-      [payment.user_id || null, row.id, payment.email, months, payment.id]
+       VALUES ($1, $2, $3, $4::date, ($4::date + ($5::int * INTERVAL '1 month'))::date, 'active', $6)`,
+      [payment.user_id || null, row.id, payment.email, paidDate(payment), months, payment.id]
     );
   }
   if (kind === "workshop" && ref) {
@@ -245,18 +271,38 @@ async function fulfillPaidPayment(payment) {
       userId = found.rows[0]?.id || null;
     }
     if (!userId) return;
-    const course = await db.query("SELECT duration FROM classes WHERE id = $1", [payment.class_id]);
-    const weeksMatch = String(course.rows[0]?.duration || "").match(/(\d+)\s*week/i);
-    const weeks = weeksMatch ? Number(weeksMatch[1]) : 8;
+    const mode = payment.mode === "studio" ? "studio" : "online";
+    // Idempotent: this runs again on every dashboard load, so only apply a payment
+    // that is newer than the one the enrollment already uses. Dates come from the
+    // payment's confirmation time, never "today", so they cannot drift.
+    const current = await db.query(
+      `SELECT e.payment_id, p.created_at AS applied_created_at
+       FROM class_enrollments e
+       LEFT JOIN payments p ON p.id = e.payment_id
+       WHERE e.user_id = $1 AND e.class_id = $2 AND e.mode = $3`,
+      [userId, payment.class_id, mode]
+    );
+    const applied = current.rows[0];
+    if (applied?.payment_id === payment.id) return;
+    if (
+      applied?.payment_id &&
+      applied.applied_created_at &&
+      new Date(applied.applied_created_at) > new Date(payment.created_at)
+    ) {
+      return;
+    }
+    const course = await db.query("SELECT * FROM classes WHERE id = $1", [payment.class_id]);
+    const period = accessPeriod(course.rows[0]);
     const chunk = () => Math.random().toString(36).replace(/[^a-z]/g, "").slice(0, 3);
     const meet = `https://meet.google.com/${chunk()}-${chunk()}${chunk().slice(0, 1)}-${chunk()}`;
     await db.query(
       `INSERT INTO class_enrollments
          (user_id, class_id, outlet_id, mode, meet_link, starts_at, ends_at, payment_id, payment_status)
-       VALUES ($1, $2, $3, $4, $5, CURRENT_DATE, (CURRENT_DATE + ($6::int * INTERVAL '1 week'))::date, $7, 'paid')
+       VALUES ($1, $2, $3, $4, $5, $6::date, ($6::date + $7::interval)::date, $8, 'paid')
        ON CONFLICT (user_id, class_id, mode) DO UPDATE
        SET meet_link = COALESCE(class_enrollments.meet_link, EXCLUDED.meet_link),
-           starts_at = COALESCE(class_enrollments.starts_at, EXCLUDED.starts_at),
+           outlet_id = COALESCE(EXCLUDED.outlet_id, class_enrollments.outlet_id),
+           starts_at = EXCLUDED.starts_at,
            ends_at = EXCLUDED.ends_at,
            payment_id = EXCLUDED.payment_id,
            payment_status = 'paid'`,
@@ -264,9 +310,10 @@ async function fulfillPaidPayment(payment) {
         userId,
         payment.class_id,
         payment.outlet_id || null,
-        payment.mode === "studio" ? "studio" : "online",
+        mode,
         meet,
-        weeks,
+        paidDate(payment),
+        period,
         payment.id,
       ]
     );

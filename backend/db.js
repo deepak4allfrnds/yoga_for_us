@@ -1,4 +1,8 @@
-const { Pool } = require("pg");
+const { Pool, types } = require("pg");
+
+// Return DATE columns as plain "YYYY-MM-DD" strings. Converting them to JS Dates
+// shifts them by the server's timezone (e.g. a due date of Dec 28 showed as Dec 27).
+types.setTypeParser(1082, (value) => value);
 
 function useSsl(connectionString) {
   if (process.env.DATABASE_SSL === "false") return false;

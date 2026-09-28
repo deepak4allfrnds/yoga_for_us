@@ -88,7 +88,7 @@ export default function PaymentButtons({ getBody, amount, email }) {
         if (stopped) return;
         if (res.paid) {
           setWaiting(false);
-          navigate("/dashboard");
+          navigate("/dashboard", { state: { approvedOrder: qrOrder.order_id } });
         } else if (res.status === "failed") {
           setWaiting(false);
           setError(

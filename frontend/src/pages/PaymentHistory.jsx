@@ -136,6 +136,19 @@ export default function PaymentHistory() {
                       </p>
                     ) : null}
                     <p className="price">{money(p.amount)}</p>
+                    {p.status === "paid" && p.due_date ? (
+                      <p>
+                        <strong>Next due date:</strong> {String(p.due_date).slice(0, 10)}
+                        {p.paid_at ? (
+                          <span className="muted">
+                            {" "}
+                            · paid / approved {new Date(p.paid_at).toLocaleDateString()}
+                          </span>
+                        ) : null}
+                      </p>
+                    ) : p.status === "pending" && p.payment_method === "paytm_qr" ? (
+                      <p className="muted">Waiting for the studio to approve this payment.</p>
+                    ) : null}
                     <p className="muted">
                       Paid by {p.student_name} · {p.email}
                       {p.phone ? ` · ${p.phone}` : ""}

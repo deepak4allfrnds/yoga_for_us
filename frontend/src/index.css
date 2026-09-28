@@ -1228,3 +1228,16 @@ select {
     grid-template-columns: 1fr;
   }
 }
+
+.cal-cell.today {
+  box-shadow: 0 0 0 2px var(--green-dark) inset;
+}
+
+.cal-due {
+  color: #9a1f16;
+  font-weight: 700;
+}
+
+.due-banner {
+  margin-bottom: 20px;
+}

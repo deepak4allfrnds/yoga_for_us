@@ -27,7 +27,7 @@ const ADMIN_TABS = [
 ];
 
 const CATEGORY_OPTIONS = [
-  ["studio", "Studio (offline)"],
+  ["studio", "Studio offline"],
   ["online", "Online"],
   ["home", "Home visit"],
 ];
@@ -93,7 +93,8 @@ export default function AdminDashboard() {
     price: "",
     duration: "",
     image_url: "",
-    categories: ["studio", "online"],
+    categories: ["studio"],
+    validity_months: "",
   };
   const emptyTrainer = {
     id: null,
@@ -156,6 +157,7 @@ export default function AdminDashboard() {
   });
   const [error, setError] = useState("");
   const [weekNotice, setWeekNotice] = useState("");
+  const [payNotice, setPayNotice] = useState("");
 
   useEffect(() => {
     if (!isAdmin) {
@@ -482,22 +484,21 @@ export default function AdminDashboard() {
     if (!window.confirm(`${verb} ${money(payment.amount)} from ${payment.student_name}?`)) return;
     setError("");
     try {
-      await api(`/api/admin/payments/${payment.id}/status`, {
+      const saved = await api(`/api/admin/payments/${payment.id}/status`, {
         method: "PUT",
         body: JSON.stringify({ status }),
       });
       await loadAll();
+      setPayNotice(
+        status === "paid"
+          ? `Approved ${money(payment.amount)} from ${payment.student_name}.${
+              saved.due_date ? ` Next due date: ${String(saved.due_date).slice(0, 10)}.` : ""
+            }`
+          : `Rejected the payment from ${payment.student_name}.`
+      );
     } catch (err) {
       setError(err.message);
     }
-  }
-
-  function toggleClassCategory(id) {
-    const current = classForm.categories || [];
-    setClassForm({
-      ...classForm,
-      categories: current.includes(id) ? current.filter((c) => c !== id) : [...current, id],
-    });
   }
 
   async function toggleReviewFeatured(review) {
@@ -579,6 +580,11 @@ export default function AdminDashboard() {
         {tab === "payments" && (
           <>
             <h1 className="serif">Awaiting approval (Paytm QR)</h1>
+            {payNotice ? (
+              <p className="notice" role="status">
+                {payNotice}
+              </p>
+            ) : null}
             {awaitingQr.length === 0 ? (
               <p className="muted">
                 No QR payments waiting. When a student pays by scanning your Paytm QR,
@@ -681,6 +687,7 @@ export default function AdminDashboard() {
                   <th>Amount</th>
                   <th>Method</th>
                   <th>Status</th>
+                  <th>Next due</th>
                 </tr>
               </thead>
               <tbody>
@@ -722,6 +729,11 @@ export default function AdminDashboard() {
                     </td>
                     <td>
                       <span className={`badge ${p.status}`}>{p.status}</span>
+                    </td>
+                    <td>
+                      {p.status === "paid" && p.due_date
+                        ? String(p.due_date).slice(0, 10)
+                        : "—"}
                     </td>
                   </tr>
                 ))}
@@ -767,6 +779,21 @@ export default function AdminDashboard() {
                 />
               </label>
               <label>
+                Access period per payment (sets the next due date)
+                <select
+                  value={classForm.validity_months ?? ""}
+                  onChange={(e) =>
+                    setClassForm({ ...classForm, validity_months: e.target.value })
+                  }
+                >
+                  <option value="">From duration text (default 1 month)</option>
+                  <option value="1">1 month</option>
+                  <option value="3">3 months</option>
+                  <option value="6">6 months</option>
+                  <option value="12">1 year</option>
+                </select>
+              </label>
+              <label>
                 Image
                 <input
                   type="file"
@@ -777,19 +804,27 @@ export default function AdminDashboard() {
                   }
                 />
               </label>
-              <fieldset className="full category-picker">
-                <legend>Category (where this class is listed)</legend>
-                {CATEGORY_OPTIONS.map(([id, label]) => (
-                  <label key={id}>
-                    <input
-                      type="checkbox"
-                      checked={(classForm.categories || []).includes(id)}
-                      onChange={() => toggleClassCategory(id)}
-                    />{" "}
-                    {label}
-                  </label>
-                ))}
-              </fieldset>
+              <label>
+                Class type (where it is listed on the website)
+                <select
+                  value={(classForm.categories || []).join(",")}
+                  onChange={(e) =>
+                    setClassForm({ ...classForm, categories: e.target.value.split(",") })
+                  }
+                  required
+                >
+                  {CATEGORY_OPTIONS.map(([id, label]) => (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  ))}
+                  {(classForm.categories || []).length > 1 ? (
+                    <option value={classForm.categories.join(",")}>
+                      {classForm.categories.map(categoryLabel).join(" + ")} (current)
+                    </option>
+                  ) : null}
+                </select>
+              </label>
               <label className="full">
                 Description
                 <textarea
@@ -835,7 +870,11 @@ export default function AdminDashboard() {
                         className="btn btn-green"
                         type="button"
                         onClick={() =>
-                          setClassForm({ ...c, categories: c.categories || ["studio", "online"] })
+                          setClassForm({
+                            ...c,
+                            categories: c.categories || ["studio", "online"],
+                            validity_months: c.validity_months ? String(c.validity_months) : "",
+                          })
                         }
                       >
                         Edit

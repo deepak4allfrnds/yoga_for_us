@@ -19,7 +19,11 @@ const PAYMENT_SELECT = `
          c.description AS class_description,
          c.duration AS class_duration,
          c.image_url AS class_image,
-         o.name AS outlet_name
+         o.name AS outlet_name,
+         COALESCE(
+           (SELECT m.expires_at FROM memberships m WHERE m.payment_id = p.id LIMIT 1),
+           (SELECT e.ends_at FROM class_enrollments e WHERE e.payment_id = p.id LIMIT 1)
+         ) AS due_date
   FROM payments p
   LEFT JOIN classes c ON c.id = p.class_id
   LEFT JOIN outlets o ON o.id = p.outlet_id

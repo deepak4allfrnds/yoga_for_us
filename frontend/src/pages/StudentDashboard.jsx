@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import WeeklySchedule from "../components/WeeklySchedule";
@@ -15,6 +15,17 @@ function dateLabel(value) {
   return String(value).slice(0, 10);
 }
 
+function daysLeftLabel(value) {
+  if (!value) return "";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  const days = Math.round((due - today) / 86400000);
+  if (days < 0) return `Overdue by ${-days} day${days === -1 ? "" : "s"}`;
+  if (days === 0) return "Due today";
+  return `${days} day${days === 1 ? "" : "s"} left`;
+}
+
 function coursePath(course) {
   return `/courses/${course.class_id}?mode=${encodeURIComponent(course.mode || "studio")}`;
 }
@@ -22,6 +33,16 @@ function coursePath(course) {
 export default function StudentDashboard() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const location = useLocation();
+  const approvedOrder = location.state?.approvedOrder;
+  const [approved, setApproved] = useState(null);
+
+  useEffect(() => {
+    if (!approvedOrder) return;
+    api(`/api/payments/status/${encodeURIComponent(approvedOrder)}`)
+      .then(setApproved)
+      .catch(() => {});
+  }, [approvedOrder]);
 
   useEffect(() => {
     api("/api/user/dashboard")
@@ -63,6 +84,19 @@ export default function StudentDashboard() {
             <p className="muted">Loading…</p>
           ) : (
             <>
+              {approved?.paid ? (
+                <div className="notice due-banner" role="status">
+                  <strong>Payment approved.</strong> {approved.title} is active from{" "}
+                  {dateLabel(approved.paid_at)}.
+                  {approved.due_date ? (
+                    <>
+                      {" "}
+                      Next due date: <strong>{dateLabel(approved.due_date)}</strong> (
+                      {daysLeftLabel(approved.due_date)}).
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
               {(data.reminders || []).length > 0 ? (
                 <div className="notice" style={{ marginBottom: 28 }}>
                   <strong>Due payment & reminders</strong>
@@ -80,10 +114,15 @@ export default function StudentDashboard() {
               <div className="grid-3 dash-grid">
                 <article className="card">
                   <div className="card-body">
-                    <p className="muted">Membership expiry</p>
+                    <p className="muted">Membership · next due date</p>
                     <h3 className="serif" style={{ marginTop: 0 }}>
                       {m?.expires_at ? dateLabel(m.expires_at) : "No active plan"}
                     </h3>
+                    {m?.expires_at ? (
+                      <p className="muted">
+                        {daysLeftLabel(m.expires_at)} · started {dateLabel(m.starts_at)}
+                      </p>
+                    ) : null}
                     <p>{m?.plan_name || "Choose a membership to unlock live classes."}</p>
                     <Link className="btn btn-green" to="/membership">
                       Memberships
@@ -163,7 +202,13 @@ export default function StudentDashboard() {
                         <p>
                           <strong>Start:</strong> {dateLabel(e.starts_at)}
                           <br />
-                          <strong>End:</strong> {dateLabel(e.ends_at)}
+                          <strong>Next due date:</strong> {dateLabel(e.ends_at)}
+                          {e.ends_at ? (
+                            <>
+                              <br />
+                              <span className="muted">{daysLeftLabel(e.ends_at)}</span>
+                            </>
+                          ) : null}
                         </p>
                         <p className="muted">
                           {e.payment_status === "paid" ? "Payment complete" : "Payment pending"}

@@ -520,7 +520,8 @@ async function createPendingPayment(req, gateway) {
 async function settlePayment(paymentId, status, gatewayPaymentId, gateway) {
   await db.query(
     `UPDATE payments
-     SET status = $1, payment_method = $2, cf_payment_id = COALESCE($3, cf_payment_id)
+     SET status = $1::varchar, payment_method = $2, cf_payment_id = COALESCE($3, cf_payment_id),
+         paid_at = CASE WHEN $1::varchar = 'paid' THEN COALESCE(paid_at, NOW()) ELSE paid_at END
      WHERE id = $4`,
     [status, gateway, gatewayPaymentId || null, paymentId]
   );
@@ -605,11 +606,18 @@ app.post("/api/payments/paytm-qr/submit", async (req, res) => {
 app.get("/api/payments/status/:orderId", async (req, res) => {
   try {
     const result = await db.query(
-      "SELECT status, kind, payment_method FROM payments WHERE cf_order_id = $1",
+      `${PAYMENT_SELECT} WHERE p.cf_order_id = $1`,
       [req.params.orderId]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: "Payment not found" });
-    res.json({ status: result.rows[0].status, paid: result.rows[0].status === "paid" });
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: "Payment not found" });
+    res.json({
+      status: row.status,
+      paid: row.status === "paid",
+      paid_at: row.paid_at,
+      due_date: row.due_date,
+      title: row.class_title || row.kind,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not load payment status" });
@@ -938,9 +946,7 @@ app.get("/api/user/enrollments", requireAuth, async (req, res) => {
     `);
     await db.query(
       `UPDATE class_enrollments e
-       SET payment_status = 'paid',
-           starts_at = COALESCE(e.starts_at, CURRENT_DATE),
-           ends_at = COALESCE(e.ends_at, (CURRENT_DATE + INTERVAL '8 weeks')::date)
+       SET payment_status = 'paid'
        WHERE e.user_id = $1
          AND (
            e.payment_status = 'paid'
@@ -993,40 +999,71 @@ app.get("/api/user/attendance", requireAuth, async (req, res) => {
   }
 });
 
+function isoDay(value) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  const d = new Date(value);
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function paidWindow(enroll) {
+  const start = enroll.starts_at ? isoDay(enroll.starts_at) : isoDay(new Date());
+  const end = enroll.ends_at ? isoDay(enroll.ends_at) : start;
+  return { start, end };
+}
+
+async function paidEnrollment(userId, classId) {
+  const paid = await db.query(
+    `SELECT e.*
+     FROM class_enrollments e
+     WHERE e.user_id = $1 AND e.class_id = $2
+       AND (e.payment_status = 'paid' OR e.payment_id IS NOT NULL)
+     ORDER BY e.ends_at DESC NULLS LAST, e.created_at DESC
+     LIMIT 1`,
+    [userId, classId]
+  );
+  return paid.rows[0] || null;
+}
+
+// Students can clear a mark they made by mistake (within their paid window).
+app.delete("/api/user/attendance", requireAuth, async (req, res) => {
+  const { class_id, session_date } = req.query;
+  if (!class_id || !session_date) {
+    return res.status(400).json({ error: "Class and date are required" });
+  }
+  try {
+    const enroll = await paidEnrollment(req.user.id, class_id);
+    if (!enroll) return res.status(403).json({ error: "Pay for this course before marking attendance" });
+    const { start, end } = paidWindow(enroll);
+    if (session_date < start || session_date > end) {
+      return res.status(400).json({ error: `Only days from ${start} to ${end} can be changed` });
+    }
+    await db.query(
+      "DELETE FROM attendance WHERE user_id = $1 AND class_id = $2 AND session_date = $3",
+      [req.user.id, class_id, session_date]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not change attendance" });
+  }
+});
+
 app.post("/api/user/attendance", requireAuth, async (req, res) => {
   const { class_id, outlet_id, session_date, present } = req.body;
   if (!class_id || !session_date) {
     return res.status(400).json({ error: "Class and date are required" });
   }
   try {
-    const paid = await db.query(
-      `SELECT e.*
-       FROM class_enrollments e
-       WHERE e.user_id = $1 AND e.class_id = $2
-         AND (
-           e.payment_status = 'paid'
-           OR e.payment_id IS NOT NULL
-           OR EXISTS (
-             SELECT 1 FROM payments p
-             WHERE p.user_id = e.user_id AND p.class_id = e.class_id AND p.status = 'paid'
-           )
-         )
-       ORDER BY e.created_at DESC
-       LIMIT 1`,
-      [req.user.id, class_id]
-    );
-    const enroll = paid.rows[0];
+    const enroll = await paidEnrollment(req.user.id, class_id);
     if (!enroll) {
       return res.status(403).json({ error: "Pay for this course before marking attendance" });
     }
-    const start = String(enroll.starts_at || new Date().toISOString()).slice(0, 10);
-    const end = String(enroll.ends_at || start).slice(0, 10);
+    const { start, end } = paidWindow(enroll);
     if (session_date < start || session_date > end) {
-      return res.status(400).json({ error: `Attendance is only for ${start} to ${end}` });
-    }
-    const today = new Date().toISOString().slice(0, 10);
-    if (session_date < today) {
-      return res.status(400).json({ error: "Past dates cannot be marked" });
+      return res.status(400).json({
+        error: `Attendance can only be marked from ${start} to your due date ${end}. Renew to continue.`,
+      });
     }
     const result = await db.query(
       `INSERT INTO attendance (user_id, class_id, outlet_id, session_date, present)
@@ -1133,7 +1170,11 @@ app.get("/api/admin/payments", requireAdmin, async (_req, res) => {
   try {
     const list = await db.query(
       `SELECT p.*, c.title AS class_title, c.duration AS class_duration, o.name AS outlet_name,
-              COALESCE(mp.name, w.title, c.title) AS item_title
+              COALESCE(mp.name, w.title, c.title) AS item_title,
+              COALESCE(
+                (SELECT m.expires_at FROM memberships m WHERE m.payment_id = p.id LIMIT 1),
+                (SELECT e.ends_at FROM class_enrollments e WHERE e.payment_id = p.id LIMIT 1)
+              ) AS due_date
        FROM payments p
        LEFT JOIN classes c ON c.id = p.class_id
        LEFT JOIN outlets o ON o.id = p.outlet_id
@@ -1173,6 +1214,11 @@ app.get("/api/admin/classes", requireAdmin, async (_req, res) => {
 
 const CLASS_CATEGORIES = ["studio", "online", "home"];
 
+function cleanValidity(value) {
+  const months = Number(value);
+  return [1, 3, 6, 12].includes(months) ? months : null;
+}
+
 function cleanCategories(value) {
   const list = (Array.isArray(value) ? value : [])
     .map((c) => String(c).toLowerCase())
@@ -1190,9 +1236,17 @@ app.post("/api/admin/classes", requireAdmin, async (req, res) => {
   try {
     await ensureStudioTables();
     const result = await db.query(
-      `INSERT INTO classes (title, description, price, duration, image_url, categories)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [title, description || "", price || 0, duration || "", image_url || "", categories]
+      `INSERT INTO classes (title, description, price, duration, image_url, categories, validity_months)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [
+        title,
+        description || "",
+        price || 0,
+        duration || "",
+        image_url || "",
+        categories,
+        cleanValidity(req.body.validity_months),
+      ]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -1211,9 +1265,19 @@ app.put("/api/admin/classes/:id", requireAdmin, async (req, res) => {
     await ensureStudioTables();
     const result = await db.query(
       `UPDATE classes
-       SET title = $1, description = $2, price = $3, duration = $4, image_url = $5, categories = $6
-       WHERE id = $7 RETURNING *`,
-      [title, description, price, duration, image_url, categories, req.params.id]
+       SET title = $1, description = $2, price = $3, duration = $4, image_url = $5, categories = $6,
+           validity_months = $7
+       WHERE id = $8 RETURNING *`,
+      [
+        title,
+        description,
+        price,
+        duration,
+        image_url,
+        categories,
+        cleanValidity(req.body.validity_months),
+        req.params.id,
+      ]
     );
     res.json(result.rows[0]);
   } catch (err) {
