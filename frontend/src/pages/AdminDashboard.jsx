@@ -8,6 +8,7 @@ import AdminStudio from "./AdminStudio";
 
 const ADMIN_TABS = [
   "payments",
+  "payqr",
   "users",
   "classes",
   "trainers",
@@ -536,6 +537,7 @@ export default function AdminDashboard() {
         </h2>
         {[
           ["payments", "Payments"],
+          ["payqr", "Payment QR"],
           ["users", "Registered users"],
           ["classes", "Yoga classes"],
           ["trainers", "Teachers"],
@@ -581,7 +583,10 @@ export default function AdminDashboard() {
               <p className="muted">
                 No QR payments waiting. When a student pays by scanning your Paytm QR,
                 it appears here. Check your Paytm app, then approve it to unlock
-                their class or membership.
+                their class or membership.{" "}
+                <button type="button" className="link-button" onClick={() => setTab("payqr")}>
+                  Update the payment QR
+                </button>
               </p>
             ) : (
               <div className="table-scroll">
@@ -616,7 +621,7 @@ export default function AdminDashboard() {
                             {p.phone ? ` · ${p.phone}` : ""}
                           </span>
                         </td>
-                        <td>{p.class_title || p.kind}</td>
+                        <td>{p.item_title || p.class_title || p.kind}</td>
                         <td>
                           <strong>{money(p.amount)}</strong>
                         </td>
@@ -2095,8 +2100,8 @@ export default function AdminDashboard() {
           </>
         )}
 
-        {["settings", "trials", "private", "workshops", "members", "qr"].includes(tab) ? (
-          <AdminStudio tab={tab} classes={classes} outlets={outlets} />
+        {["settings", "payqr", "trials", "private", "workshops", "members", "qr"].includes(tab) ? (
+          <AdminStudio tab={tab} classes={classes} outlets={outlets} onOpenTab={setTab} />
         ) : null}
       </main>
     </div>

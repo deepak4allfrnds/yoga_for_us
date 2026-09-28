@@ -1132,10 +1132,14 @@ app.delete("/api/admin/media/:id", requireAdmin, async (req, res) => {
 app.get("/api/admin/payments", requireAdmin, async (_req, res) => {
   try {
     const list = await db.query(
-      `SELECT p.*, c.title AS class_title, c.duration AS class_duration, o.name AS outlet_name
+      `SELECT p.*, c.title AS class_title, c.duration AS class_duration, o.name AS outlet_name,
+              COALESCE(mp.name, w.title, c.title) AS item_title
        FROM payments p
        LEFT JOIN classes c ON c.id = p.class_id
        LEFT JOIN outlets o ON o.id = p.outlet_id
+       LEFT JOIN membership_plans mp ON p.kind = 'membership' AND mp.id = p.ref_id
+       LEFT JOIN workshop_bookings wb ON p.kind = 'workshop' AND wb.id = p.ref_id
+       LEFT JOIN workshops w ON w.id = wb.workshop_id
        ORDER BY p.created_at DESC`
     );
     const summary = await db.query(`

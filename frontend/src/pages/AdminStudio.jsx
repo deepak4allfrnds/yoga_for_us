@@ -24,7 +24,7 @@ const emptyWorkshop = {
   seats: "20",
 };
 
-export default function AdminStudio({ tab, classes, outlets }) {
+export default function AdminStudio({ tab, classes, outlets, onOpenTab }) {
   const [data, setData] = useState({
     settings: {},
     trials: [],
@@ -47,6 +47,7 @@ export default function AdminStudio({ tab, classes, outlets }) {
   const [createdQr, setCreatedQr] = useState(null);
   const [privateFilter, setPrivateFilter] = useState("all");
   const [error, setError] = useState("");
+  const [qrNotice, setQrNotice] = useState("");
 
   async function load() {
     const d = await api("/api/admin/studio");
@@ -72,15 +73,36 @@ export default function AdminStudio({ tab, classes, outlets }) {
     }
   }
 
-  async function uploadQr(file) {
+  // QR changes are saved straight away so students see the new QR immediately.
+  async function saveQrSettings(changes, message) {
+    setError("");
+    setQrNotice("");
+    try {
+      await api("/api/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify({ ...data.settings, ...changes }),
+      });
+      await load();
+      setQrNotice(message);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function uploadQr(file, input) {
     setError("");
     try {
       const body = new FormData();
       body.append("image", file);
-      const data = await api("/api/admin/upload", { method: "POST", body });
-      setSettings((prev) => ({ ...prev, paytm_qr_url: data.image_url }));
+      const uploaded = await api("/api/admin/upload", { method: "POST", body });
+      await saveQrSettings(
+        { paytm_qr_url: uploaded.image_url },
+        "QR code updated. Students now see this QR when they choose Paytm."
+      );
     } catch (err) {
       setError(err.message);
+    } finally {
+      if (input) input.value = "";
     }
   }
 
@@ -233,49 +255,101 @@ export default function AdminStudio({ tab, classes, outlets }) {
                 onChange={(e) => setSettings({ ...settings, default_meet_link: e.target.value })}
               />
             </label>
-            <h2 className="serif" style={{ marginBottom: 0 }}>
-              Paytm QR payments
-            </h2>
-            <p className="muted">
-              When a QR is uploaded, &quot;Pay with Paytm&quot; shows this QR to the
-              student. Approve each payment under Payments → Awaiting approval.
-            </p>
-            <label>
-              Paytm / UPI QR image
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => e.target.files?.[0] && uploadQr(e.target.files[0])}
-              />
-            </label>
-            {settings.paytm_qr_url ? (
-              <div>
-                <img
-                  src={imageSrc(settings.paytm_qr_url)}
-                  alt="Current Paytm QR"
-                  className="qr-pay-image"
-                />
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => setSettings({ ...settings, paytm_qr_url: "" })}
-                >
-                  Remove QR
-                </button>
-              </div>
-            ) : null}
-            <label>
-              UPI ID shown under the QR (optional)
-              <input
-                value={settings.paytm_upi_id || ""}
-                onChange={(e) => setSettings({ ...settings, paytm_upi_id: e.target.value })}
-                placeholder="yogaforus@paytm"
-              />
-            </label>
             <button className="btn btn-green" type="submit">
               Save settings
             </button>
           </form>
+        </>
+      )}
+
+      {tab === "payqr" && (
+        <>
+          <h1 className="serif">Payment QR</h1>
+          <p className="muted">
+            Upload your Paytm / UPI QR. When a student chooses &quot;Pay with
+            Paytm&quot;, they see this QR and the exact amount, pay in their app,
+            and tap &quot;I have paid&quot;. You then check your Paytm app and
+            approve the payment, which unlocks their class or membership and opens
+            their dashboard.
+          </p>
+          {qrNotice ? (
+            <p className="notice" role="status">
+              {qrNotice}
+            </p>
+          ) : null}
+          <div className="payqr-layout">
+            <div className="panel">
+              <h2 className="serif" style={{ marginTop: 0 }}>
+                {data.settings?.paytm_qr_url ? "Current QR" : "No QR uploaded yet"}
+              </h2>
+              {data.settings?.paytm_qr_url ? (
+                <img
+                  src={imageSrc(data.settings.paytm_qr_url)}
+                  alt="Current payment QR code"
+                  className="qr-pay-image"
+                />
+              ) : (
+                <p className="muted">
+                  Until you upload one, &quot;Pay with Paytm&quot; uses the online
+                  Paytm checkout instead.
+                </p>
+              )}
+              <label className="btn btn-green qr-upload">
+                {data.settings?.paytm_qr_url ? "Replace QR image" : "Upload QR image"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="visually-hidden"
+                  onChange={(e) =>
+                    e.target.files?.[0] && uploadQr(e.target.files[0], e.target)
+                  }
+                />
+              </label>
+              {data.settings?.paytm_qr_url ? (
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => {
+                    if (!window.confirm("Remove the payment QR? Students will no longer see it.")) return;
+                    saveQrSettings({ paytm_qr_url: "" }, "QR removed.");
+                  }}
+                >
+                  Remove QR
+                </button>
+              ) : null}
+            </div>
+            <form
+              className="panel form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveQrSettings({ paytm_upi_id: settings.paytm_upi_id || "" }, "UPI ID saved.");
+              }}
+            >
+              <label>
+                UPI ID shown under the QR (optional)
+                <input
+                  value={settings.paytm_upi_id || ""}
+                  onChange={(e) => setSettings({ ...settings, paytm_upi_id: e.target.value })}
+                  placeholder="yogaforus@paytm"
+                />
+              </label>
+              <button className="btn btn-green" type="submit">
+                Save UPI ID
+              </button>
+              <p className="muted">
+                Approve or reject student payments under Payments → Awaiting approval.
+              </p>
+              {onOpenTab ? (
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => onOpenTab("payments")}
+                >
+                  Open payments awaiting approval
+                </button>
+              ) : null}
+            </form>
+          </div>
         </>
       )}
 

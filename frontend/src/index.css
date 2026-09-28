@@ -1186,3 +1186,45 @@ select {
     transform: rotate(360deg);
   }
 }
+
+.payqr-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.payqr-layout .panel {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.qr-upload {
+  cursor: pointer;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--green);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .payqr-layout {
+    grid-template-columns: 1fr;
+  }
+}
