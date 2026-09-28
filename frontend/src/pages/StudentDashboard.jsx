@@ -31,9 +31,9 @@ function coursePath(course) {
 }
 
 export default function StudentDashboard() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
   const location = useLocation();
+  const [data, setData] = useState(location.state?.prefetched || null);
+  const [error, setError] = useState("");
   const approvedOrder = location.state?.approvedOrder;
   const [approved, setApproved] = useState(null);
 
@@ -45,7 +45,8 @@ export default function StudentDashboard() {
   }, [approvedOrder]);
 
   useEffect(() => {
-    api("/api/user/dashboard")
+    // Opened straight after sign-in: data is already loaded, just refresh quietly.
+    api("/api/user/dashboard", { quiet: Boolean(location.state?.prefetched) })
       .then(setData)
       .catch((err) => setError(err.message));
   }, []);
@@ -81,7 +82,10 @@ export default function StudentDashboard() {
         <div className="container">
           {error ? <p className="error">{error}</p> : null}
           {!data ? (
-            <p className="muted">Loading…</p>
+            <div className="dash-loading" role="status">
+              <span className="spinner" aria-hidden="true" />
+              <p>Loading your classes, membership, and attendance…</p>
+            </div>
           ) : (
             <>
               {approved?.paid ? (

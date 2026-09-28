@@ -1241,3 +1241,123 @@ select {
 .due-banner {
   margin-bottom: 20px;
 }
+
+.auth-progress {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(21, 77, 53, 0.35);
+  backdrop-filter: blur(3px);
+}
+
+.auth-progress-card {
+  width: min(420px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 28px 26px;
+  border-radius: 20px;
+  background: white;
+  box-shadow: 0 20px 50px rgba(21, 77, 53, 0.25);
+  text-align: center;
+  animation: auth-pop 0.25s ease-out;
+}
+
+.auth-progress-card h2 {
+  margin: 0;
+  color: var(--green-dark);
+  font-size: 28px;
+}
+
+.auth-progress-mark {
+  width: 52px;
+  height: 52px;
+  font-size: 26px;
+}
+
+.auth-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+}
+
+.auth-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #6b7a71;
+}
+
+.auth-step.is-active {
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.auth-step.is-done {
+  color: var(--green-dark);
+}
+
+.auth-step-icon {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.auth-step.is-done .auth-step-icon {
+  border-color: var(--green);
+  background: var(--green);
+  color: white;
+}
+
+.auth-step.is-active .auth-step-icon {
+  border-color: transparent;
+}
+
+.spinner.small {
+  width: 22px;
+  height: 22px;
+  border-width: 3px;
+}
+
+.auth-slow {
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+
+.dash-loading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 0;
+  color: var(--green-dark);
+}
+
+.dash-loading p {
+  margin: 0;
+}
+
+@keyframes auth-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-progress-card {
+    animation: none;
+  }
+}

@@ -1,15 +1,14 @@
 import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
+import AuthProgress from "../components/AuthProgress";
 import { api } from "../api";
-import { useAuth } from "../AuthContext";
-import { safeNext } from "../safeNext";
+import { useSignInFlow } from "../useSignInFlow";
 
 export default function Register() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = params.get("next");
-  const { setSession } = useAuth();
+  const flow = useSignInFlow();
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -26,12 +25,15 @@ export default function Register() {
     e.preventDefault();
     setError("");
     try {
-      const data = await api("/api/auth/register", {
-        method: "POST",
-        body: JSON.stringify(form),
-      });
-      setSession(data.token, data.user);
-      navigate(safeNext(next, "/"), { replace: true });
+      await flow.run(
+        () =>
+          api("/api/auth/register", {
+            method: "POST",
+            quiet: true,
+            body: JSON.stringify(form),
+          }),
+        next
+      );
     } catch (err) {
       setError(err.message);
     }
@@ -40,6 +42,15 @@ export default function Register() {
   return (
     <>
       <Navbar />
+      {flow.busy ? (
+        <AuthProgress
+          title="Creating your account…"
+          steps={["Creating your account", "Signing you in", "Preparing your dashboard"]}
+          active={flow.stage}
+          done={flow.stage >= 3}
+          doneText={`Welcome to Yoga For Us, ${flow.doneName}!`}
+        />
+      ) : null}
       <section className="section">
         <div className="container">
           <h1 className="serif" style={{ color: "var(--green-dark)" }}>
@@ -75,7 +86,7 @@ export default function Register() {
                 minLength={6}
               />
             </label>
-            <button className="btn btn-green" type="submit">
+            <button className="btn btn-green" type="submit" disabled={flow.busy}>
               Create account
             </button>
             {error ? <p className="error">{error}</p> : null}

@@ -17,9 +17,13 @@ export function subscribeLoader(fn) {
   return () => loaderListeners.delete(fn);
 }
 
-export async function api(path, options = {}) {
-  pending += 1;
-  notifyLoader();
+// Pass { quiet: true } to skip the global "Loading data…" overlay (used when a
+// page shows its own progress, e.g. sign-in).
+export async function api(path, { quiet = false, ...options } = {}) {
+  if (!quiet) {
+    pending += 1;
+    notifyLoader();
+  }
   try {
     const headers = { ...(options.headers || {}) };
     if (!(options.body instanceof FormData)) {
@@ -41,8 +45,10 @@ export async function api(path, options = {}) {
     }
     return data;
   } finally {
-    pending = Math.max(0, pending - 1);
-    notifyLoader();
+    if (!quiet) {
+      pending = Math.max(0, pending - 1);
+      notifyLoader();
+    }
   }
 }
 
